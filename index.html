@@ -378,7 +378,7 @@ function render(){
       h("div",{className:"quiz-badge",style:{background:ec+"12",color:ec,border:"1px solid "+ec+"25"},innerHTML:q.s+(q.y?" · "+q.y:"")}),
       h("div",{style:{fontSize:"11px",color:"var(--t3)"},innerHTML:st.streak>0?"🔥"+st.streak:todayH.t+"문제"})
     ));
-    pg.appendChild(h("div",{className:"quiz-q"},h("div",{className:"quiz-q-text",innerHTML:q.q})));
+    const qCard=h("div",{className:"quiz-q"});if(q.img)qCard.appendChild(h("img",{src:q.img,style:{width:"100%",borderRadius:"8px",marginBottom:"8px"}}));qCard.appendChild(h("div",{className:"quiz-q-text",innerHTML:q.q}));pg.appendChild(qCard);
     S.shuf.forEach((a,i)=>{
       let cl="opt";if(S.sel!==null){cl+=" done";if(i===S.cIdx)cl+=" ok";else if(i===S.sel&&!S.ok)cl+=" ng";}
       pg.appendChild(h("div",{className:cl,onclick:()=>answer(i)},h("div",{className:"opt-num mono",innerHTML:String(i+1)}),h("div",{className:"opt-text",innerHTML:a})));
@@ -632,7 +632,7 @@ function render(){
       card.appendChild(h("div",{style:{fontSize:"11px",color:"var(--t3)",textAlign:"center",marginBottom:"8px"},innerHTML:(listenState.idx+1)+" / "+pool2.length}));
       
       // 문제
-      card.appendChild(h("div",{style:{fontSize:"14px",color:"var(--t1)",lineHeight:"1.7",marginBottom:"14px",padding:"12px",borderRadius:"12px",background:"rgba(255,255,255,.02)",textAlign:"left"},innerHTML:curQ.q}));
+      const lqd=h("div",{style:{fontSize:"14px",color:"var(--t1)",lineHeight:"1.7",marginBottom:"14px",padding:"12px",borderRadius:"12px",background:"rgba(255,255,255,.02)",textAlign:"left"}});if(curQ.img)lqd.appendChild(h("img",{src:curQ.img,style:{width:"100%",borderRadius:"8px",marginBottom:"8px"}}));lqd.appendChild(h("span",{innerHTML:curQ.q}));card.appendChild(lqd);
       
       // 보기
       curQ.a.forEach((a,i)=>{
@@ -683,7 +683,7 @@ function render(){
       const r=new FileReader();r.onload=async function(){
         const b64=r.result.split(",")[1];S.aiLoading=true;render();
         try{const txt=await aiCallImg(b64,f.type,'이미지에서 시험문제 추출. JSON배열만: [{"q":"문제","a":["1","2","3","4"],"c":0,"exp":"해설"}]');
-        const m=txt.match(/\[.*\]/s);if(m){const qs=JSON.parse(m[0]).map((q,i)=>({id:"ocr_"+Date.now()+"_"+i,q:q.q,a:q.a,c:q.c,s:exObj?.subjects[0]||"일반",y:"OCR",exam:S.activeExam,exp:q.exp||"",src:"ocr"}));S.questions.push(...qs);save();S.aiLoading=false;alert(qs.length+"개 추출!");render();}else{S.aiLoading=false;alert("추출 실패: "+(txt||"응답없음").substring(0,100));render();}}catch(e2){S.aiLoading=false;alert(e2.message);render();}
+        const m=txt.match(/\[.*\]/s);if(m){const qs=JSON.parse(m[0]).map((q,i)=>({id:"ocr_"+Date.now()+"_"+i,q:q.q,a:q.a,c:q.c,s:exObj?.subjects[0]||"일반",y:"OCR",exam:S.activeExam,exp:q.exp||"",src:"ocr",img:"data:"+f.type+";base64,"+b64}));S.questions.push(...qs);save();S.aiLoading=false;alert(qs.length+"개 추출!");render();}else{S.aiLoading=false;alert("추출 실패: "+(txt||"응답없음").substring(0,100));render();}}catch(e2){S.aiLoading=false;alert(e2.message);render();}
       };r.readAsDataURL(f);
     }}));
     oc.appendChild(h("div",{style:{marginTop:"8px",fontSize:"10px",color:"var(--t3)",lineHeight:"1.6"},innerHTML:"💡 기출문제 사진 촬영 → AI가 문제/보기/정답/해설 추출 → DB 저장"}));
@@ -869,7 +869,7 @@ function render(){
       pg.appendChild(h("div",{style:{fontSize:"11px",color:"var(--t3)",marginBottom:"10px"},innerHTML:ans+"/"+S.omrQs.length+" 응답"}));
       const q=S.omrQs[S.omrIdx];
       pg.appendChild(h("div",{style:{fontSize:"12px",color:"var(--accent)",fontWeight:"700",marginBottom:"6px"},innerHTML:"Q"+(S.omrIdx+1)+". ["+q.s+"]"}));
-      pg.appendChild(h("div",{className:"quiz-q"},h("div",{className:"quiz-q-text",innerHTML:q.q})));
+      const qCard=h("div",{className:"quiz-q"});if(q.img)qCard.appendChild(h("img",{src:q.img,style:{width:"100%",borderRadius:"8px",marginBottom:"8px"}}));qCard.appendChild(h("div",{className:"quiz-q-text",innerHTML:q.q}));pg.appendChild(qCard);
       const gr=h("div",{className:"omr-grid"});
       q.a.forEach((a,i)=>{gr.appendChild(h("div",{className:"omr-cell"+(S.omrAns[S.omrIdx]===i?" selected":""),onclick:()=>{S.omrAns[S.omrIdx]=i;render();},innerHTML:(i+1)+". "+a}));});
       pg.appendChild(gr);
