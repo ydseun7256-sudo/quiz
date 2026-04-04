@@ -398,7 +398,7 @@ function render(){
     // Upcoming exam schedule
     pg.appendChild(h("div",{className:"section-title",innerHTML:"📅 다가오는 일정"}));
     const now=new Date();
-    SCHEDULE.forEach(sc=>{
+    (LS.get("schedule",null)||SCHEDULE).forEach(sc=>{
       const examDate=new Date(sc.exam.split("~")[0].replace(/\./g,"-"));
       const regDate=new Date(sc.reg.split("~")[0].replace(/\./g,"-"));
       const dDay=Math.ceil((examDate-now)/(86400000));
@@ -492,7 +492,7 @@ function render(){
         const sub=document.getElementById("aiSub").value.trim(),cnt=parseInt(document.getElementById("aiCnt").value);
         if(!sub){alert("과목 입력");return;}if(!S.apiKey){alert("설정에서 API 키 입력");return;}
         S.aiLoading=true;render();
-        const prompt="너는 국가기술자격 CBT 출제위원이다.\n시험: "+(exObj?.name||"")+"\n과목: "+sub+"\n"+cnt+"문제 생성. 4지선다, 해설포함.\nJSON배열만 출력: [{"q":"문제","a":["1","2","3","4"],"c":0,"exp":"해설"}]";
+        const prompt='너는 국가기술자격 CBT 출제위원이다.\n시험: '+(exObj?.name||'')+'\n과목: '+sub+'\n'+cnt+'문제 생성. 4지선다, 해설포함.\nJSON배열만 출력: [{"q":"문제","a":["1","2","3","4"],"c":0,"exp":"해설"}]';
         try{const text=await aiCall(prompt,4000);const m=text.match(/\[.*\]/s);if(m){const qs=JSON.parse(m[0]);const nqs=qs.map((q,i)=>({id:"ai_"+Date.now()+"_"+i,q:q.q,a:q.a,c:q.c,s:sub,y:"AI",exam:S.activeExam,exp:q.exp||"",src:"ai"}));S.questions.push(...nqs);const eo=S.exams.find(e=>e.id===S.activeExam);if(eo&&!eo.subjects.includes(sub))eo.subjects.push(sub);save();alert(nqs.length+"개 생성!");S.aiLoading=false;render();}else{S.aiLoading=false;alert("생성 실패");render();}}catch(e){S.aiLoading=false;alert("오류: "+e.message);render();}
       },innerHTML:"AI 문제 생성"}));
       pg.appendChild(gc);
@@ -596,7 +596,7 @@ function render(){
       const f=e.target.files[0];if(!f)return;if(!S.apiKey){alert("API 키 필요");return;}
       const r=new FileReader();r.onload=async function(){
         const b64=r.result.split(",")[1];S.aiLoading=true;render();
-        try{const txt=await aiCallImg(b64,f.type,"이미지에서 시험문제 추출. JSON배열만: [{"q":"문제","a":["1","2","3","4"],"c":0,"exp":"해설"}]");
+        try{const txt=await aiCallImg(b64,f.type,'이미지에서 시험문제 추출. JSON배열만: [{"q":"문제","a":["1","2","3","4"],"c":0,"exp":"해설"}]');
         const m=txt.match(/\[.*\]/s);if(m){const qs=JSON.parse(m[0]).map((q,i)=>({id:"ocr_"+Date.now()+"_"+i,q:q.q,a:q.a,c:q.c,s:exObj?.subjects[0]||"일반",y:"OCR",exam:S.activeExam,exp:q.exp||"",src:"ocr"}));S.questions.push(...qs);save();S.aiLoading=false;alert(qs.length+"개 추출!");render();}else{S.aiLoading=false;alert("추출 실패");render();}}catch(e2){S.aiLoading=false;alert(e2.message);render();}
       };r.readAsDataURL(f);
     }}));
@@ -621,6 +621,27 @@ function render(){
       pg.appendChild(item);
     });
     pg.appendChild(h("div",{style:{marginTop:"12px",fontSize:"10px",color:"var(--t3)",textAlign:"center"},innerHTML:"※ 정확한 일정은 Q-net(q-net.or.kr)에서 확인하세요"}));
+    
+    // Auto update button
+    if(S.apiKey){
+      pg.appendChild(h("button",{className:"btn btn-accent btn-full",style:{marginTop:"8px"},onclick:async()=>{
+        S.aiLoading=true;render();
+        const year=new Date().getFullYear();
+        try{
+          const result=await aiCall('현재 '+year+'년 한국 국가기술자격시험(전기기사, 전기산업기사, 전기기능사 등) 시험 일정을 알려줘. 필기/실기 구분하여 접수기간, 시험기간, 합격발표일을 포함해서 JSON 배열로만 출력해. 형식: [{"name":"제1회 필기","reg":"2026.01.06~01.09","exam":"2026.02.07~03.02","result":"2026.03.12"}] JSON만 출력, 다른 텍스트 없이.',2000);
+          const m=result.match(/\[.*\]/s);
+          if(m){
+            const newSched=JSON.parse(m[0]);
+            LS.set("schedule",newSched);
+            alert("일정이 업데이트되었습니다! ("+newSched.length+"개)");
+          }else{
+            LS.set("schedule_text",result);
+            alert("일정 정보를 가져왔습니다!");
+          }
+          S.aiLoading=false;render();
+        }catch(e){S.aiLoading=false;alert("오류: "+e.message);render();}
+      },innerHTML:"🔄 AI로 최신 일정 업데이트"}));
+    }
   }
 
   // ─── STATS ───
