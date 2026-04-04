@@ -602,6 +602,70 @@ function render(){
     }}));
     oc.appendChild(h("div",{style:{marginTop:"8px",fontSize:"10px",color:"var(--t3)",lineHeight:"1.6"},innerHTML:"💡 기출문제 사진 촬영 → AI가 문제/보기/정답/해설 추출 → DB 저장"}));
     pg.appendChild(oc);
+    
+    // PDF upload
+    const pdfCard=h("div",{className:"card",style:{marginTop:"8px"}});
+    pdfCard.appendChild(h("div",{className:"label",innerHTML:"📄 PDF 파일 업로드 (기출문제 PDF)"}));
+    pdfCard.appendChild(h("div",{style:{fontSize:"11px",color:"var(--t2)",marginBottom:"8px",lineHeight:"1.5"},innerHTML:"PDF 전체를 AI가 읽어서 문제를 추출합니다. 페이지 넘김으로 짤리는 문제 없이 완벽 추출!"}));
+    pdfCard.appendChild(h("input",{type:"file",accept:".pdf,application/pdf",className:"input",style:{padding:"8px"},onchange:async(e)=>{
+      const file=e.target.files[0];if(!file)return;
+      if(!S.apiKey){alert("API 키 필요");return;}
+      if(file.size>20*1024*1024){alert("20MB 이하 파일만 지원");return;}
+      
+      const reader=new FileReader();
+      reader.onload=async function(){
+        const b64=reader.result.split(",")[1];
+        S.aiLoading=true;render();
+        
+        try{
+          let txt;
+          if(S.aiProvider==="gemini"){
+            const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key="+S.apiKey,{
+              method:"POST",headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({contents:[{parts:[
+                {inline_data:{mime_type:"application/pdf",data:b64}},
+                {text:'이 PDF에서 시험문제를 모두 추출해줘. 4지선다 객관식으로 정리. 페이지 넘김으로 잘린 문제는 이어붙여서 완성해줘. JSON 배열로만 출력: [{"q":"문제","a":["보기1","보기2","보기3","보기4"],"c":0,"exp":"해설"}] c는 정답 인덱스(0-3). JSON만 출력.'}
+              ]}]})
+            });
+            const data=await res.json();
+            txt=data.candidates?.[0]?.content?.parts?.[0]?.text||"";
+          }else{
+            const res=await fetch("https://api.anthropic.com/v1/messages",{
+              method:"POST",
+              headers:{"Content-Type":"application/json","x-api-key":S.apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+              body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:8000,messages:[{role:"user",content:[
+                {type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}},
+                {type:"text",text:'이 PDF에서 시험문제를 모두 추출해줘. 4지선다 객관식으로 정리. 페이지 넘김으로 잘린 문제는 이어붙여서 완성해줘. JSON 배열로만 출력: [{"q":"문제","a":["보기1","보기2","보기3","보기4"],"c":0,"exp":"해설"}] c는 정답 인덱스(0-3). JSON만 출력.'}
+              ]}]})
+            });
+            const data=await res.json();
+            txt=data.content?data.content.map(c=>c.text||"").join(""):"";
+          }
+          
+          const m=txt.match(/\[.*\]/s);
+          if(m){
+            const qs=JSON.parse(m[0]);
+            const newQs=qs.map((q,i)=>({
+              id:"pdf_"+Date.now()+"_"+i,q:q.q,a:q.a,c:q.c,
+              s:exObj?.subjects[0]||"일반",y:"PDF추출",
+              exam:S.activeExam,exp:q.exp||"",src:"ocr"
+            }));
+            S.questions.push(...newQs);save();
+            S.aiLoading=false;
+            alert(newQs.length+"개 문제가 추출되었습니다!");
+            render();
+          }else{
+            S.aiLoading=false;
+            alert("문제 추출 실패. PDF 내용을 확인해주세요.");
+            render();
+          }
+        }catch(err){S.aiLoading=false;alert("오류: "+err.message);render();}
+      };
+      reader.readAsDataURL(file);
+    }}));
+    pdfCard.appendChild(h("div",{style:{marginTop:"6px",padding:"8px",borderRadius:"8px",background:"rgba(139,92,246,.04)",border:"1px solid rgba(139,92,246,.1)",fontSize:"10px",color:"var(--t3)",lineHeight:"1.6"},innerHTML:"💡 PDF 특징:<br>• 페이지 넘김 문제도 AI가 이어붙여서 추출<br>• 교사용 PDF(정답 표시)면 정답도 자동 인식<br>• 한 번에 최대 20MB, 여러 번 나눠서 업로드 가능"}));
+    pg.appendChild(pdfCard);
+    
     const ocrQs=S.questions.filter(q=>q.src==="ocr");
     if(ocrQs.length){pg.appendChild(h("div",{className:"section-title",innerHTML:"추출된 문제 "+ocrQs.length+"개"}));ocrQs.slice(-5).reverse().forEach(q=>{pg.appendChild(h("div",{className:"card"},h("div",{style:{fontSize:"11px",color:"var(--t2)"},innerHTML:q.q.substring(0,60)+"..."})));});}
   }
