@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="theme-color" content="#0f0f1a">
 <title>CBT 합격 마스터</title>
 <style>
@@ -210,7 +213,7 @@ let S={
   }
 })();
 
-function save(){LS.set("questions",S.questions);LS.set("stats",S.stats);LS.set("wrongs",S.wrongs);LS.set("reviews",S.reviews);LS.set("exams",S.exams);LS.set("apiKey",S.apiKey);LS.set("aiProvider",S.aiProvider);LS.set("activeExam",S.activeExam);}
+function save(){LS.set("questions",S.questions);LS.set("stats",S.stats);LS.set("wrongs",S.wrongs);LS.set("reviews",S.reviews);LS.set("exams",S.exams);LS.set("apiKey",S.apiKey);LS.set("aiProvider",S.aiProvider);LS.set("fontScale",S.fontScale);LS.set("activeExam",S.activeExam);}
 
 function getPool(){return S.questions.filter(q=>q.exam===S.activeExam);}
 
@@ -311,6 +314,7 @@ function fmt(d){return d.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-di
 function fmtD(d){return d.toLocaleDateString("ko-KR",{month:"long",day:"numeric",weekday:"long"});}
 
 function render(){
+  if(!navigator.onLine&&!S.questions.length){document.getElementById("root").innerHTML='<div style="text-align:center;padding:60px 20px;color:rgba(255,255,255,.35)">📡 인터넷 연결을 확인해주세요</div>';return;}
   const root=document.getElementById("root");root.innerHTML="";
   const st=S.stats;const rate=st.total>0?Math.round(st.correct/st.total*100):0;
   const todayH=(st.history||[]).length>0&&st.history[st.history.length-1].d===new Date().toDateString()?st.history[st.history.length-1]:{t:0,c:0};
@@ -885,6 +889,32 @@ function render(){
 
 setInterval(()=>{if(S.screen==="lock")render();},1000);
 render();
+
+// ═══ 글자 크기 ═══
+if(!S.fontScale)S.fontScale=LS.get("fontScale",1);
+document.body.style.fontSize=(13*S.fontScale)+"px";
+
+// ═══ 뒤로가기 처리 ═══
+window.addEventListener('popstate',()=>{
+  if(S.screen==="quiz"){S.screen="home";S.tab="home";render();}
+  else if(S.tab!=="home"){S.tab="home";render();}
+});
+window.history.pushState(null,null,window.location.href);
+
+// ═══ APK 자동업데이트 체크 ═══
+const APP_VERSION=2;
+setTimeout(async()=>{
+  try{
+    const res=await fetch("https://api.github.com/repos/ydseun7256-sudo/quiz/releases/latest");
+    if(!res.ok)return;
+    const data=await res.json();
+    const ver=parseInt(data.tag_name?.replace("v","")||"0");
+    if(ver>APP_VERSION){
+      const apk=data.assets?.find(a=>a.name.endsWith(".apk"));
+      if(apk){S.updateAvailable={version:data.tag_name,url:apk.browser_download_url,notes:data.body||""};render();}
+    }
+  }catch(e){}
+},3000);
 </script>
 </body>
 </html>
