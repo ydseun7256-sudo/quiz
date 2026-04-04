@@ -734,7 +734,7 @@ function render(){
               method:"POST",headers:{"Content-Type":"application/json"},
               body:JSON.stringify({contents:[{parts:[
                 {inline_data:{mime_type:"application/pdf",data:b64}},
-                {text:'이 PDF에서 시험문제를 모두 추출해줘. 4지선다 객관식으로 정리. 페이지 넘김으로 잘린 문제는 이어붙여서 완성해줘. JSON 배열로만 출력: [{"q":"문제","a":["보기1","보기2","보기3","보기4"],"c":0,"exp":"해설"}] c는 정답 인덱스(0-3). JSON만 출력.'}
+                {text:'이 PDF에서 시험문제를 빠짐없이 모두 추출해줘. 중요 규칙: 1)그림/회로도/도형이 있는 문제는 절대 건너뛰지 말고, 그림 내용을 텍스트로 상세히 설명해서 문제에 포함시켜라 (예: [회로도: R1=10Ω과 R2=20Ω이 직렬연결, 전압원 V=100V]) 2)수식은 그대로 텍스트로 표현 (예: V=IR, P=VI, √3 등) 3)페이지 넘김으로 잘린 문제는 이어붙여라 4)4지선다 객관식으로 정리 5)해설 포함. JSON 배열로만 출력: [{"q":"문제","a":["보기1","보기2","보기3","보기4"],"c":0,"exp":"해설"}] c는 정답 인덱스(0-3). JSON만 출력.'}
               ]}]})
             });
             const data=await res.json();
@@ -745,7 +745,7 @@ function render(){
               headers:{"Content-Type":"application/json","x-api-key":S.apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
               body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:8000,messages:[{role:"user",content:[
                 {type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}},
-                {type:"text",text:'이 PDF에서 시험문제를 모두 추출해줘. 4지선다 객관식으로 정리. 페이지 넘김으로 잘린 문제는 이어붙여서 완성해줘. JSON 배열로만 출력: [{"q":"문제","a":["보기1","보기2","보기3","보기4"],"c":0,"exp":"해설"}] c는 정답 인덱스(0-3). JSON만 출력.'}
+                {type:"text",text:'이 PDF에서 시험문제를 빠짐없이 모두 추출해줘. 중요 규칙: 1)그림/회로도/도형이 있는 문제는 절대 건너뛰지 말고, 그림 내용을 텍스트로 상세히 설명해서 문제에 포함시켜라 (예: [회로도: R1=10Ω과 R2=20Ω이 직렬연결, 전압원 V=100V]) 2)수식은 그대로 텍스트로 표현 (예: V=IR, P=VI, √3 등) 3)페이지 넘김으로 잘린 문제는 이어붙여라 4)4지선다 객관식으로 정리 5)해설 포함. JSON 배열로만 출력: [{"q":"문제","a":["보기1","보기2","보기3","보기4"],"c":0,"exp":"해설"}] c는 정답 인덱스(0-3). JSON만 출력.'}
               ]}]})
             });
             const data=await res.json();
