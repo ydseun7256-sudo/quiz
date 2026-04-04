@@ -192,6 +192,7 @@ let S={
   aiProvider:LS.get("aiProvider","gemini"),
   aiLoading:false,
   modal:null,
+  updateAvailable:null,
 };
 
 // Version migration
@@ -374,7 +375,12 @@ function render(){
     // Header
     pg.appendChild(h("div",{style:{marginBottom:"20px"}},
       h("div",{style:{fontSize:"11px",color:"var(--t3)",letterSpacing:"1px"},innerHTML:"CBT 합격 마스터"}),
-      h("div",{style:{fontSize:"24px",fontWeight:"900",marginTop:"2px"},innerHTML:"안녕하세요! 👋"})
+      h("div",{style:{fontSize:"24px",fontWeight:"900",marginTop:"2px"},innerHTML:"안녕하세요! 👋"}),
+      S.updateAvailable?h("div",{style:{marginTop:"10px",padding:"12px",borderRadius:"12px",background:"rgba(59,130,246,.06)",border:"1px solid rgba(59,130,246,.15)"},onclick:()=>{window.open(S.updateAvailable.url,"_blank");}},...[
+        h("div",{style:{fontSize:"12px",fontWeight:"700",color:"var(--blue)"},innerHTML:"🔄 앱 업데이트 "+S.updateAvailable.version+" 사용 가능"}),
+        h("div",{style:{fontSize:"10px",color:"var(--t3)",marginTop:"3px"},innerHTML:S.updateAvailable.notes}),
+        h("div",{style:{fontSize:"10px",color:"var(--blue)",marginTop:"4px",fontWeight:"600"},innerHTML:"탭하여 다운로드 →"})
+      ]):null
     ));
 
     // Exam selector
@@ -482,113 +488,89 @@ function render(){
   else if(S.tab==="ai"){
     if(S.aiLoading){pg.appendChild(h("div",{className:"empty",innerHTML:"🤖 AI 작업 중...<br>잠시만 기다려주세요"}));}
     else{
-      // Generate
+      // ─── AI 문제 생성 ───
       pg.appendChild(h("div",{className:"section-title",innerHTML:"🤖 AI 문제 생성"}));
       const gc=h("div",{className:"card"});
-      gc.appendChild(h("div",{style:{fontSize:"12px",color:"var(--t2)",marginBottom:"8px"},innerHTML:"AI가 실제 시험 수준의 문제를 자동 생성합니다"}));
-      gc.appendChild(h("div",{className:"label",innerHTML:"과목"}));gc.appendChild(h("input",{className:"input",id:"aiSub",value:exObj?.subjects[0]||""}));
-      gc.appendChild(h("div",{className:"label",innerHTML:"문제 수"}));const csl=h("select",{className:"input select",id:"aiCnt"});[5,10,15,20].forEach(n=>csl.appendChild(h("option",{value:String(n),innerHTML:n+"문제"})));gc.appendChild(csl);
-      gc.appendChild(h("button",{className:"btn btn-accent btn-full",style:{marginTop:"8px"},onclick:async()=>{
-        const sub=document.getElementById("aiSub").value.trim(),cnt=parseInt(document.getElementById("aiCnt").value);
-        if(!sub){alert("과목 입력");return;}if(!S.apiKey){alert("설정에서 API 키 입력");return;}
+      gc.appendChild(h("div",{style:{fontSize:"12px",color:"var(--t2)",marginBottom:"10px"},innerHTML:"자격증과 과목을 선택하면 AI가 실제 시험 수준의 문제를 생성합니다"}));
+      
+      // 자격증 선택
+      gc.appendChild(h("div",{className:"label",innerHTML:"자격증 선택"}));
+      const examSel=h("select",{className:"input select",id:"aiExam",onchange:()=>{
+        const selExam=S.exams.find(e=>e.id===document.getElementById("aiExam").value);
+        const subSel=document.getElementById("aiSubject");
+        if(subSel&&selExam){subSel.innerHTML="";selExam.subjects.forEach(s=>{const o=document.createElement("option");o.value=s;o.innerHTML=s;subSel.appendChild(o);});}
+      }});
+      S.exams.forEach(ex=>{
+        const cnt=S.questions.filter(q=>q.exam===ex.id).length;
+        const o=h("option",{value:ex.id,innerHTML:(ex.icon||"📚")+" "+ex.name+(ex.type?" ["+ex.type+"]":"")+" ("+cnt+"문제)"});
+        if(ex.id===S.activeExam)o.selected=true;
+        examSel.appendChild(o);
+      });
+      gc.appendChild(examSel);
+      
+      // 과목 선택 (자격증에 따라 자동)
+      gc.appendChild(h("div",{className:"label",innerHTML:"과목 선택"}));
+      const curExam=S.exams.find(e=>e.id===S.activeExam);
+      const subSel=h("select",{className:"input select",id:"aiSubject"});
+      (curExam?.subjects||["일반"]).forEach(s=>{subSel.appendChild(h("option",{value:s,innerHTML:s}));});
+      gc.appendChild(subSel);
+      
+      // 문제 수
+      gc.appendChild(h("div",{className:"label",innerHTML:"문제 수"}));
+      const cntSel=h("select",{className:"input select",id:"aiCnt"});
+      [5,10,15,20].forEach(n=>cntSel.appendChild(h("option",{value:String(n),innerHTML:n+"문제"})));
+      gc.appendChild(cntSel);
+      
+      // 생성 버튼
+      gc.appendChild(h("button",{className:"btn btn-accent btn-full",style:{marginTop:"10px"},onclick:async()=>{
+        const selExamId=document.getElementById("aiExam").value;
+        const selSub=document.getElementById("aiSubject").value;
+        const cnt=parseInt(document.getElementById("aiCnt").value);
+        const selExamObj=S.exams.find(e=>e.id===selExamId);
+        if(!S.apiKey){alert("설정에서 API 키를 입력해주세요");return;}
+        
         S.aiLoading=true;render();
-        const prompt='너는 국가기술자격 CBT 출제위원이다.\n시험: '+(exObj?.name||'')+'\n과목: '+sub+'\n'+cnt+'문제 생성. 4지선다, 해설포함.\nJSON배열만 출력: [{"q":"문제","a":["1","2","3","4"],"c":0,"exp":"해설"}]';
-        try{const text=await aiCall(prompt,4000);const m=text.match(/\[.*\]/s);if(m){const qs=JSON.parse(m[0]);const nqs=qs.map((q,i)=>({id:"ai_"+Date.now()+"_"+i,q:q.q,a:q.a,c:q.c,s:sub,y:"AI",exam:S.activeExam,exp:q.exp||"",src:"ai"}));S.questions.push(...nqs);const eo=S.exams.find(e=>e.id===S.activeExam);if(eo&&!eo.subjects.includes(sub))eo.subjects.push(sub);save();alert(nqs.length+"개 생성!");S.aiLoading=false;render();}else{S.aiLoading=false;alert("생성 실패");render();}}catch(e){S.aiLoading=false;alert("오류: "+e.message);render();}
-      },innerHTML:"AI 문제 생성"}));
+        const prompt='너는 한국 국가기술자격 CBT 출제위원이다. 시험: '+selExamObj.name+(selExamObj.type?' ('+selExamObj.type+')':'')+', 과목: '+selSub+'. '+cnt+'문제를 실제 시험 난이도로 생성해라. 4지선다 객관식, 해설 포함. JSON 배열로만 출력 (다른 텍스트 없이): [{"q":"문제","a":["보기1","보기2","보기3","보기4"],"c":0,"exp":"해설"}] c는 정답 인덱스(0-3).';
+        try{
+          const text=await aiCall(prompt,4000);
+          const m=text.match(/\[.*\]/s);
+          if(m){
+            const qs=JSON.parse(m[0]);
+            const newQs=qs.map((q,i)=>({
+              id:"ai_"+Date.now()+"_"+i,q:q.q,a:q.a,c:q.c,
+              s:selSub,y:"AI생성",exam:selExamId,exp:q.exp||"",src:"ai"
+            }));
+            S.questions.push(...newQs);
+            // 과목이 없으면 추가
+            if(selExamObj&&!selExamObj.subjects.includes(selSub))selExamObj.subjects.push(selSub);
+            save();
+            S.aiLoading=false;
+            alert(newQs.length+"개 문제가 생성되었습니다! ("+selExamObj.name+" - "+selSub+")");
+            render();
+          }else{S.aiLoading=false;alert("생성 실패. API 키와 인터넷을 확인해주세요.");render();}
+        }catch(e){S.aiLoading=false;alert("오류: "+e.message);render();}
+      },innerHTML:"🤖 AI 문제 생성"}));
       pg.appendChild(gc);
 
-      // Analysis
-      pg.appendChild(h("div",{className:"section-title",innerHTML:"🎯 AI 약점 분석"}));
-      pg.appendChild(h("div",{className:"card"},h("button",{className:"btn btn-primary btn-full",onclick:async()=>{
-        if(!S.apiKey){alert("API 키 필요");return;}if(S.wrongs.length<3){alert("오답 3개 이상 필요");return;}
+      // ─── AI 약점분석 + 커리큘럼 ───
+      pg.appendChild(h("div",{className:"section-title",style:{marginTop:"14px"},innerHTML:"🎯 AI 약점 분석 + 학습 계획"}));
+      const anaCard=h("div",{className:"card"});
+      anaCard.appendChild(h("div",{style:{fontSize:"12px",color:"var(--t2)",marginBottom:"8px"},innerHTML:"오답 패턴을 분석하고 7일 학습 계획을 생성합니다"}));
+      anaCard.appendChild(h("button",{className:"btn btn-primary btn-full",onclick:async()=>{
+        if(!S.apiKey){alert("API 키 필요");return;}
+        if(S.wrongs.length<3){alert("오답 3개 이상 필요합니다");return;}
         S.aiLoading=true;render();
         const ws=S.wrongs.slice(-30).map(w=>"["+w.q.s+"] "+w.q.q+" → 정답:"+w.q.a[w.q.c]).join("\n");
-        try{const r=await aiCall("시험 분석 전문가로서 약점분석+7일학습계획 작성:\n"+ws,2000);S.aiLoading=false;S.modal={type:"aiResult",data:r};render();}catch(e){S.aiLoading=false;alert(e.message);render();}
-      },innerHTML:"🎯 약점분석 + 7일 커리큘럼"})));
-    }
-  }
-
-  // ─── LISTEN ───
-  else if(S.tab==="listen"){
-    const pool2=getPool();
-    if(!pool2.length){pg.appendChild(h("div",{className:"empty",innerHTML:"문제가 없습니다"}));} 
-    else{
-      // Controls
-      pg.appendChild(h("div",{className:"card card-glow",style:{textAlign:"center",padding:"20px"}},
-        h("div",{style:{fontSize:"13px",color:"var(--t2)",marginBottom:"12px"},innerHTML:"🎧 음성으로 문제를 듣고 학습하세요"}),
-        
-        // Speed control
-        h("div",{style:{display:"flex",justifyContent:"center",gap:"8px",marginBottom:"14px"}},
-          ...([0.7,0.9,1.0,1.2].map(sp=>
-            h("button",{style:{padding:"6px 12px",borderRadius:"8px",border:"1px solid "+(TTS.rate===sp?"var(--accent)":"var(--border)"),background:TTS.rate===sp?"rgba(6,214,160,.1)":"transparent",color:TTS.rate===sp?"var(--accent)":"var(--t3)",fontSize:"11px",fontWeight:"600",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{TTS.rate=sp;render();},innerHTML:sp+"x"})
-          ))
-        ),
-        
-        // Current question display
-        h("div",{style:{fontSize:"11px",color:"var(--t3)",marginBottom:"6px"},innerHTML:(listenState.idx+1)+"/"+pool2.length}),
-        h("div",{style:{fontSize:"14px",color:"var(--t1)",lineHeight:"1.7",marginBottom:"14px",minHeight:"40px",textAlign:"left",padding:"12px",borderRadius:"12px",background:"rgba(255,255,255,.02)"},innerHTML:pool2[listenState.idx]?.q||""}),
-        
-        // Options display
-        ...(pool2[listenState.idx]?.a.map((a,i)=>{
-          const isAns=i===pool2[listenState.idx]?.c;
-          return h("div",{style:{textAlign:"left",padding:"8px 12px",margin:"3px 0",borderRadius:"10px",fontSize:"12px",color:listenState.showAnswer?(isAns?"var(--ok)":"var(--t3)"):"var(--t2)",background:listenState.showAnswer&&isAns?"rgba(16,185,129,.06)":"transparent",border:"1px solid "+(listenState.showAnswer&&isAns?"rgba(16,185,129,.2)":"var(--border)")},innerHTML:(i+1)+". "+a})
-        })||[]),
-        
-        // Answer/explanation
-        listenState.showAnswer?h("div",{style:{marginTop:"10px",padding:"10px",borderRadius:"10px",background:"rgba(16,185,129,.04)",border:"1px solid rgba(16,185,129,.1)",fontSize:"11px",color:"var(--t2)",textAlign:"left",lineHeight:"1.6"},innerHTML:"💡 "+(pool2[listenState.idx]?.exp||"정답: "+pool2[listenState.idx]?.a[pool2[listenState.idx]?.c])}):null,
-        
-        // Playback controls
-        h("div",{style:{display:"flex",justifyContent:"center",gap:"10px",marginTop:"16px"}},
-          h("button",{className:"btn btn-ghost",style:{flex:"none",width:"44px",height:"44px",borderRadius:"22px",padding:"0",fontSize:"16px"},onclick:()=>{
-            listenState.idx=Math.max(0,listenState.idx-1);listenState.showAnswer=false;TTS.stop();render();
-          },innerHTML:"⏮"}),
-          
-          h("button",{className:"btn btn-primary",style:{flex:"none",width:"56px",height:"56px",borderRadius:"28px",padding:"0",fontSize:"20px"},onclick:()=>{
-            if(TTS.speaking){TTS.stop();render();}
-            else{
-              const q=pool2[listenState.idx];
-              TTS.readQuestion(q,listenState.showAnswer,()=>{
-                if(listenState.auto&&!listenState.showAnswer){
-                  listenState.showAnswer=true;render();
-                  setTimeout(()=>{TTS.speak("정답. "+(q.c+1)+"번. "+q.a[q.c],()=>{
-                    setTimeout(()=>{listenState.idx=Math.min(pool2.length-1,listenState.idx+1);listenState.showAnswer=false;render();},1500);
-                  });},500);
-                }
-              });
-              render();
-            }
-          },innerHTML:TTS.speaking?"⏸":"▶"}),
-          
-          h("button",{className:"btn btn-ghost",style:{flex:"none",width:"44px",height:"44px",borderRadius:"22px",padding:"0",fontSize:"16px"},onclick:()=>{
-            listenState.idx=Math.min(pool2.length-1,listenState.idx+1);listenState.showAnswer=false;TTS.stop();render();
-          },innerHTML:"⏭"})
-        ),
-        
-        // Toggle buttons
-        h("div",{style:{display:"flex",justifyContent:"center",gap:"8px",marginTop:"12px"}},
-          h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid "+(listenState.showAnswer?"var(--ok)":"var(--border)"),background:listenState.showAnswer?"rgba(16,185,129,.06)":"transparent",color:listenState.showAnswer?"var(--ok)":"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{listenState.showAnswer=!listenState.showAnswer;render();},innerHTML:listenState.showAnswer?"정답 숨기기":"정답 보기"}),
-          
-          h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid "+(listenState.auto?"var(--accent)":"var(--border)"),background:listenState.auto?"rgba(6,214,160,.06)":"transparent",color:listenState.auto?"var(--accent)":"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{listenState.auto=!listenState.auto;render();},innerHTML:listenState.auto?"자동넘김 ON":"자동넘김 OFF"}),
-          
-          h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid var(--border)",background:"transparent",color:"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{
-            const q=pool2[listenState.idx];if(q)TTS.speak("정답은 "+(q.c+1)+"번. "+q.a[q.c]);
-          },innerHTML:"🔊 정답만"})
-        )
-      ));
-      
-      // Quick list
-      pg.appendChild(h("div",{className:"section-title",innerHTML:"📋 문제 목록 (탭하면 이동)"}));
-      pool2.slice(Math.max(0,listenState.idx-2),listenState.idx+8).forEach((q,i2)=>{
-        const realIdx=Math.max(0,listenState.idx-2)+i2;
-        pg.appendChild(h("div",{className:"action-item",style:{opacity:realIdx===listenState.idx?"1":".5",borderColor:realIdx===listenState.idx?"var(--accent)":"var(--border)"},onclick:()=>{listenState.idx=realIdx;listenState.showAnswer=false;TTS.stop();render();}},
-          h("div",{style:{fontSize:"11px",color:"var(--t3)",minWidth:"28px"},innerHTML:String(realIdx+1)}),
-          h("div",{style:{fontSize:"11px",color:"var(--t2)",flex:"1",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},innerHTML:q.q})
-        ));
-      });
+        try{
+          const r=await aiCall('너는 시험 합격 전략 코치다. 사용자의 오답 패턴을 분석하고 약점을 파악한 후 7일 학습 계획을 세워줘.\n\n오답 목록:\n'+ws+'\n\n분석해줘: 1.취약과목 TOP3 2.왜 틀렸는지 패턴 3.보완 전략 4.7일 학습 계획(요일별 과목+문제수). 한국어로 깔끔하게.',2000);
+          S.aiLoading=false;S.modal={type:"aiResult",data:r};render();
+        }catch(e){S.aiLoading=false;alert(e.message);render();}
+      },innerHTML:"🎯 약점분석 + 7일 커리큘럼 생성"}));
+      pg.appendChild(anaCard);
     }
   }
   
-  // ─── OCR ───
+  // ─── OCR ───// ─── OCR ───// ─── OCR ───
   else if(S.tab==="ocr"){
     const oc=h("div",{className:"card"});
     oc.appendChild(h("div",{style:{fontSize:"12px",color:"var(--t2)",marginBottom:"8px",lineHeight:"1.6"},innerHTML:"교재나 기출문제를 촬영하면 AI가 문제를 자동 추출합니다"}));
@@ -837,6 +819,32 @@ function render(){
     ));
 
     pg.appendChild(h("button",{className:"btn btn-full",style:{background:"rgba(239,68,68,.06)",color:"var(--ng)",border:"1px solid rgba(239,68,68,.15)",marginTop:"8px"},onclick:()=>{if(confirm("통계 초기화?")){S.stats={total:0,correct:0,streak:0,maxStreak:0,history:[],bySub:{},byExam:{},qDiff:{}};S.wrongs=[];S.reviews={};save();render();}},innerHTML:"통계 초기화"}));
+
+    // Backup/Restore
+    pg.appendChild(h("div",{className:"section-title",innerHTML:"💾 데이터 관리"}));
+    const bkCard=h("div",{className:"card"});
+    bkCard.appendChild(h("button",{className:"btn btn-ghost btn-full",onclick:()=>{
+      const data={questions:S.questions.filter(q=>q.src!=="cbt"),stats:S.stats,wrongs:S.wrongs,reviews:S.reviews,exams:S.exams};
+      const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+      const url=URL.createObjectURL(blob);
+      const a2=document.createElement("a");a2.href=url;a2.download="cbt_backup_"+new Date().toISOString().slice(0,10)+".json";a2.click();
+    },innerHTML:"📤 학습 데이터 백업 (다운로드)"}));
+    bkCard.appendChild(h("div",{className:"label",innerHTML:"📥 백업 파일 복원"}));
+    bkCard.appendChild(h("input",{type:"file",accept:".json",className:"input",style:{padding:"8px"},onchange:(e)=>{
+      const file=e.target.files[0];if(!file)return;
+      const r2=new FileReader();r2.onload=function(){
+        try{const data=JSON.parse(r2.result);
+          if(data.questions)S.questions.push(...data.questions);
+          if(data.stats)Object.assign(S.stats,data.stats);
+          if(data.wrongs)S.wrongs=data.wrongs;
+          save();alert("복원 완료!");render();
+        }catch(err){alert("파일 형식 오류");}
+      };r2.readAsText(file);
+    }}));
+    pg.appendChild(bkCard);
+
+    // Cache refresh
+    pg.appendChild(h("button",{className:"btn btn-ghost btn-full",style:{marginTop:"6px"},onclick:()=>{if(confirm("최신 버전을 다시 불러올까요?")){window.location.reload(true);}},innerHTML:"🔄 최신 버전 새로고침"}));
   }
 
   root.appendChild(pg);
