@@ -339,6 +339,30 @@ const TTS={
 // Listen mode state
 let listenState={playing:false,idx:0,auto:true,showAnswer:false,speed:1};
 
+function listenAutoPlay(){
+  if(!listenState.playing)return;
+  var p=getPool();
+  if(!p.length||listenState.idx>=p.length){listenState.playing=false;render();return;}
+  var q=p[listenState.idx];
+  TTS.readQuestion(q,false,function(){
+    if(!listenState.playing)return;
+    listenState.showAnswer=true;render();
+    setTimeout(function(){
+      if(!listenState.playing)return;
+      TTS.speak("정답. "+(q.c+1)+"번. "+q.a[q.c],function(){
+        if(!listenState.playing)return;
+        if(listenState.auto&&listenState.idx<p.length-1){
+          setTimeout(function(){
+            if(!listenState.playing)return;
+            listenState.idx++;listenState.showAnswer=false;render();
+            setTimeout(function(){listenAutoPlay();},300);
+          },1000);
+        }else{listenState.playing=false;render();}
+      });
+    },500);
+  });
+}
+
 function startOMR(){const p=getPool();if(p.length<20){alert("최소 20문제 필요");return;}S.omrQs=[...p].sort(()=>Math.random()-.5).slice(0,20);S.omrAns={};S.omrDone=false;S.omrIdx=0;}
 
 // ═══════════════════════════════════════
@@ -614,64 +638,48 @@ function render(){
   else if(S.tab==="listen"){
     const pool2=getPool();
     if(!pool2.length){
-      pg.appendChild(h("div",{className:"empty",innerHTML:"문제가 없습니다.<br>홈에서 시험을 선택하거나 AI탭에서 문제를 생성하세요."}));
+      pg.appendChild(h("div",{className:"empty",innerHTML:"문제가 없습니다."}));
     }else{
       if(listenState.idx>=pool2.length)listenState.idx=0;
       const curQ=pool2[listenState.idx];
-      
       const card=h("div",{className:"card card-glow",style:{padding:"20px"}});
       
-      // 속도 조절
+      // 속도
       const speeds=h("div",{style:{display:"flex",justifyContent:"center",gap:"8px",marginBottom:"14px"}});
-      [0.7,0.9,1.0,1.2].forEach(sp=>{
-        speeds.appendChild(h("button",{style:{padding:"6px 12px",borderRadius:"8px",border:"1px solid "+(TTS.rate===sp?"var(--accent)":"var(--border)"),background:TTS.rate===sp?"rgba(6,214,160,.1)":"transparent",color:TTS.rate===sp?"var(--accent)":"var(--t3)",fontSize:"11px",fontWeight:"600",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{TTS.rate=sp;render();},innerHTML:sp+"x"}));
+      [0.7,0.9,1.0,1.2].forEach(function(sp){
+        speeds.appendChild(h("button",{style:{padding:"6px 12px",borderRadius:"8px",border:"1px solid "+(TTS.rate===sp?"var(--accent)":"var(--border)"),background:TTS.rate===sp?"rgba(6,214,160,.1)":"transparent",color:TTS.rate===sp?"var(--accent)":"var(--t3)",fontSize:"11px",fontWeight:"600",cursor:"pointer",fontFamily:"inherit"},onclick:function(){TTS.rate=sp;render();},innerHTML:sp+"x"}));
       });
       card.appendChild(speeds);
-      
-      // 진행도
       card.appendChild(h("div",{style:{fontSize:"11px",color:"var(--t3)",textAlign:"center",marginBottom:"8px"},innerHTML:(listenState.idx+1)+" / "+pool2.length}));
       
-      // 문제
-      const lqd=h("div",{style:{fontSize:"14px",color:"var(--t1)",lineHeight:"1.7",marginBottom:"14px",padding:"12px",borderRadius:"12px",background:"rgba(255,255,255,.02)",textAlign:"left"}});if(curQ.img)lqd.appendChild(h("img",{src:curQ.img,style:{width:"100%",borderRadius:"8px",marginBottom:"8px"}}));lqd.appendChild(h("span",{innerHTML:curQ.q}));card.appendChild(lqd);
+      const lqd=h("div",{style:{fontSize:"14px",color:"var(--t1)",lineHeight:"1.7",marginBottom:"14px",padding:"12px",borderRadius:"12px",background:"rgba(255,255,255,.02)",textAlign:"left"}});
+      if(curQ.img)lqd.appendChild(h("img",{src:curQ.img,style:{width:"100%",borderRadius:"8px",marginBottom:"8px"}}));
+      lqd.appendChild(h("span",{innerHTML:curQ.q}));
+      card.appendChild(lqd);
       
-      // 보기
-      curQ.a.forEach((a,i)=>{
+      curQ.a.forEach(function(a,i){
         const isAns=i===curQ.c;
         card.appendChild(h("div",{style:{textAlign:"left",padding:"8px 12px",margin:"3px 0",borderRadius:"10px",fontSize:"12px",color:listenState.showAnswer?(isAns?"var(--ok)":"var(--t3)"):"var(--t2)",background:listenState.showAnswer&&isAns?"rgba(16,185,129,.06)":"transparent",border:"1px solid "+(listenState.showAnswer&&isAns?"rgba(16,185,129,.2)":"var(--border)")},innerHTML:(i+1)+". "+a}));
       });
       
-      // 해설
       if(listenState.showAnswer&&curQ.exp){
         card.appendChild(h("div",{style:{marginTop:"10px",padding:"10px",borderRadius:"10px",background:"rgba(16,185,129,.04)",border:"1px solid rgba(16,185,129,.1)",fontSize:"11px",color:"var(--t2)",textAlign:"left",lineHeight:"1.6"},innerHTML:"💡 "+curQ.exp}));
       }
       
-      // 재생 컨트롤
       const ctrls=h("div",{style:{display:"flex",justifyContent:"center",gap:"10px",marginTop:"16px"}});
-      ctrls.appendChild(h("button",{className:"btn btn-ghost",style:{flex:"none",width:"44px",height:"44px",borderRadius:"22px",padding:"0",fontSize:"16px"},onclick:()=>{listenState.idx=Math.max(0,listenState.idx-1);listenState.showAnswer=false;TTS.stop();render();},innerHTML:"⏮"}));
-      ctrls.appendChild(h("button",{className:"btn btn-primary",style:{flex:"none",width:"56px",height:"56px",borderRadius:"28px",padding:"0",fontSize:"20px"},onclick:()=>{
-        if(TTS.speaking){TTS.stop();render();}
-        else{TTS.readQuestion(curQ,listenState.showAnswer,()=>{
-          if(!listenState.showAnswer){
-            listenState.showAnswer=true;render();
-            setTimeout(()=>{
-              TTS.speak("정답. "+(curQ.c+1)+"번. "+curQ.a[curQ.c],()=>{
-                if(listenState.auto){setTimeout(()=>{listenState.idx=Math.min(pool2.length-1,listenState.idx+1);listenState.showAnswer=false;render();
-                    setTimeout(()=>{const nq=getPool()[listenState.idx];if(nq)TTS.readQuestion(nq,false,()=>{listenState.showAnswer=true;render();setTimeout(()=>{TTS.speak("정답. "+(nq.c+1)+"번. "+nq.a[nq.c],()=>{if(listenState.auto){setTimeout(()=>{listenState.idx=Math.min(getPool().length-1,listenState.idx+1);listenState.showAnswer=false;render();},1500);}});},500);});},500);},1500);}
-              });
-            },500);
-          }
-        });render();}
-      },innerHTML:TTS.speaking?"⏸":"▶"}));
-      ctrls.appendChild(h("button",{className:"btn btn-ghost",style:{flex:"none",width:"44px",height:"44px",borderRadius:"22px",padding:"0",fontSize:"16px"},onclick:()=>{listenState.idx=Math.min(pool2.length-1,listenState.idx+1);listenState.showAnswer=false;TTS.stop();render();},innerHTML:"⏭"}));
+      ctrls.appendChild(h("button",{className:"btn btn-ghost",style:{flex:"none",width:"44px",height:"44px",borderRadius:"22px",padding:"0",fontSize:"16px"},onclick:function(){listenState.idx=Math.max(0,listenState.idx-1);listenState.showAnswer=false;listenState.playing=false;TTS.stop();render();},innerHTML:"⏮"}));
+      ctrls.appendChild(h("button",{className:"btn btn-primary",style:{flex:"none",width:"56px",height:"56px",borderRadius:"28px",padding:"0",fontSize:"20px"},onclick:function(){
+        if(listenState.playing){listenState.playing=false;TTS.stop();render();}
+        else{listenState.playing=true;render();listenAutoPlay();}
+      },innerHTML:listenState.playing?"⏸":"▶"}));
+      ctrls.appendChild(h("button",{className:"btn btn-ghost",style:{flex:"none",width:"44px",height:"44px",borderRadius:"22px",padding:"0",fontSize:"16px"},onclick:function(){listenState.idx=Math.min(pool2.length-1,listenState.idx+1);listenState.showAnswer=false;listenState.playing=false;TTS.stop();render();},innerHTML:"⏭"}));
       card.appendChild(ctrls);
       
-      // 토글 버튼
       const toggles=h("div",{style:{display:"flex",justifyContent:"center",gap:"8px",marginTop:"12px",flexWrap:"wrap"}});
-      toggles.appendChild(h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid "+(listenState.showAnswer?"var(--ok)":"var(--border)"),background:listenState.showAnswer?"rgba(16,185,129,.06)":"transparent",color:listenState.showAnswer?"var(--ok)":"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{listenState.showAnswer=!listenState.showAnswer;render();},innerHTML:listenState.showAnswer?"정답 숨기기":"정답 보기"}));
-      toggles.appendChild(h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid "+(listenState.auto?"var(--accent)":"var(--border)"),background:listenState.auto?"rgba(6,214,160,.06)":"transparent",color:listenState.auto?"var(--accent)":"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{listenState.auto=!listenState.auto;render();},innerHTML:listenState.auto?"자동넘김 ON":"자동넘김 OFF"}));
-      toggles.appendChild(h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid var(--border)",background:"transparent",color:"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:function(){const cq=getPool()[listenState.idx];if(cq)TTS.speak("정답은 "+(cq.c+1)+"번. "+cq.a[cq.c]);},innerHTML:"🔊 정답만"}));
+      toggles.appendChild(h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid "+(listenState.showAnswer?"var(--ok)":"var(--border)"),background:listenState.showAnswer?"rgba(16,185,129,.06)":"transparent",color:listenState.showAnswer?"var(--ok)":"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:function(){listenState.showAnswer=!listenState.showAnswer;render();},innerHTML:listenState.showAnswer?"정답 숨기기":"정답 보기"}));
+      toggles.appendChild(h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid "+(listenState.auto?"var(--accent)":"var(--border)"),background:listenState.auto?"rgba(6,214,160,.06)":"transparent",color:listenState.auto?"var(--accent)":"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:function(){listenState.auto=!listenState.auto;render();},innerHTML:listenState.auto?"자동넘김 ON":"자동넘김 OFF"}));
+      toggles.appendChild(h("button",{style:{padding:"8px 16px",borderRadius:"8px",border:"1px solid var(--accent)",background:"rgba(6,214,160,.08)",color:"var(--accent)",fontSize:"11px",fontWeight:"700",cursor:"pointer",fontFamily:"inherit"},onclick:function(){var qq=getPool()[listenState.idx];if(qq)TTS.speak("정답은 "+(qq.c+1)+"번. "+qq.a[qq.c]);},innerHTML:"🔊 정답만 듣기"}));
       card.appendChild(toggles);
-      
       pg.appendChild(card);
     }
   }
