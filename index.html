@@ -201,7 +201,7 @@ let S={
 // Version migration
 (function(){
   const v=LS.get("_v",0);
-  if(v<11){
+  if(v<12){
 
     // Fix exam field
     const fixQ=LS.get("questions",null);if(fixQ){let changed=false;fixQ.forEach(q=>{if(!q.exam){q.exam="renew";changed=true;}});if(changed){LS.set("questions",fixQ);}}
@@ -212,7 +212,7 @@ let S={
     // Add missing exams
     const ids=S.exams.map(e=>e.id);
     DEFAULT_EXAMS.forEach(de=>{if(!ids.includes(de.id))S.exams.push(de);});
-    LS.set("exams",S.exams);LS.set("_v",11);
+    LS.set("exams",S.exams);LS.set("_v",12);
   }
 })();
 
@@ -268,37 +268,57 @@ async function aiCallImg(base64,mime,prompt){
   }
 }
 
-// ═══ TTS Engine ═══
+// ═══ TTS Engine (Android Native) ═══
 const TTS={
   speaking:false,
-  paused:false,
-  queue:[],
   rate:0.9,
+  _onEnd:null,
+  _checkTimer:null,
   
   speak(text,onEnd){
-    if(!window.speechSynthesis)return;
-    const u=new SpeechSynthesisUtterance(text);
-    u.lang="ko-KR";u.rate=this.rate;u.pitch=1;
-    u.onend=()=>{this.speaking=false;if(onEnd)onEnd();};
-    u.onerror=()=>{this.speaking=false;if(onEnd)onEnd();};
-    window.speechSynthesis.cancel();
-    this.speaking=true;this.paused=false;
-    window.speechSynthesis.speak(u);
+    this.stop();
+    this._onEnd=onEnd;
+    this.speaking=true;
+    
+    if(window.AppBridge){
+      // Android 네이티브 TTS
+      try{AppBridge.speak(text,this.rate);}catch(e){this.speaking=false;if(onEnd)onEnd();return;}
+      // 완료 체크 (500ms 간격)
+      this._checkTimer=setInterval(()=>{
+        try{
+          if(!AppBridge.isSpeaking()){
+            clearInterval(this._checkTimer);
+            this.speaking=false;
+            if(this._onEnd)this._onEnd();
+          }
+        }catch(e){clearInterval(this._checkTimer);this.speaking=false;}
+      },500);
+    } else if(window.speechSynthesis){
+      // 브라우저 폴백
+      const u=new SpeechSynthesisUtterance(text);
+      u.lang="ko-KR";u.rate=this.rate;
+      u.onend=()=>{this.speaking=false;if(onEnd)onEnd();};
+      u.onerror=()=>{this.speaking=false;if(onEnd)onEnd();};
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    } else {
+      this.speaking=false;
+      alert("TTS를 사용할 수 없습니다");
+      if(onEnd)onEnd();
+    }
   },
   
-  stop(){window.speechSynthesis?.cancel();this.speaking=false;this.paused=false;},
+  stop(){
+    if(this._checkTimer)clearInterval(this._checkTimer);
+    this.speaking=false;
+    try{if(window.AppBridge)AppBridge.stopSpeak();}catch(e){}
+    try{if(window.speechSynthesis)speechSynthesis.cancel();}catch(e){}
+  },
   
-  pause(){if(window.speechSynthesis?.speaking){window.speechSynthesis.pause();this.paused=true;}},
-  
-  resume(){if(this.paused){window.speechSynthesis?.resume();this.paused=false;}},
-  
-  toggle(){if(this.paused)this.resume();else if(this.speaking)this.pause();},
-  
-  // Read full question with options and answer
   readQuestion(q,includeAnswer,onDone){
-    let text="문제. "+q.q+"\n";
-    q.a.forEach((a,i)=>{text+=(i+1)+"번. "+a+"\n";});
-    if(includeAnswer){text+="정답은 "+(q.c+1)+"번, "+q.a[q.c]+"입니다.\n";if(q.exp)text+=q.exp;}
+    let text="문제. "+q.q+". ";
+    q.a.forEach((a,i)=>{text+=(i+1)+"번. "+a+". ";});
+    if(includeAnswer){text+="정답은 "+(q.c+1)+"번, "+q.a[q.c]+"입니다. ";if(q.exp)text+=q.exp;}
     this.speak(text,onDone);
   }
 };
@@ -577,7 +597,71 @@ function render(){
     }
   }
   
-  // ─── OCR ───// ─── OCR ───// ─── OCR ───
+  // ─── OCR ───
+  else if(S.tab==="listen"){
+    const pool2=getPool();
+    if(!pool2.length){
+      pg.appendChild(h("div",{className:"empty",innerHTML:"문제가 없습니다.<br>홈에서 시험을 선택하거나 AI탭에서 문제를 생성하세요."}));
+    }else{
+      if(listenState.idx>=pool2.length)listenState.idx=0;
+      const curQ=pool2[listenState.idx];
+      
+      const card=h("div",{className:"card card-glow",style:{padding:"20px"}});
+      
+      // 속도 조절
+      const speeds=h("div",{style:{display:"flex",justifyContent:"center",gap:"8px",marginBottom:"14px"}});
+      [0.7,0.9,1.0,1.2].forEach(sp=>{
+        speeds.appendChild(h("button",{style:{padding:"6px 12px",borderRadius:"8px",border:"1px solid "+(TTS.rate===sp?"var(--accent)":"var(--border)"),background:TTS.rate===sp?"rgba(6,214,160,.1)":"transparent",color:TTS.rate===sp?"var(--accent)":"var(--t3)",fontSize:"11px",fontWeight:"600",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{TTS.rate=sp;render();},innerHTML:sp+"x"}));
+      });
+      card.appendChild(speeds);
+      
+      // 진행도
+      card.appendChild(h("div",{style:{fontSize:"11px",color:"var(--t3)",textAlign:"center",marginBottom:"8px"},innerHTML:(listenState.idx+1)+" / "+pool2.length}));
+      
+      // 문제
+      card.appendChild(h("div",{style:{fontSize:"14px",color:"var(--t1)",lineHeight:"1.7",marginBottom:"14px",padding:"12px",borderRadius:"12px",background:"rgba(255,255,255,.02)",textAlign:"left"},innerHTML:curQ.q}));
+      
+      // 보기
+      curQ.a.forEach((a,i)=>{
+        const isAns=i===curQ.c;
+        card.appendChild(h("div",{style:{textAlign:"left",padding:"8px 12px",margin:"3px 0",borderRadius:"10px",fontSize:"12px",color:listenState.showAnswer?(isAns?"var(--ok)":"var(--t3)"):"var(--t2)",background:listenState.showAnswer&&isAns?"rgba(16,185,129,.06)":"transparent",border:"1px solid "+(listenState.showAnswer&&isAns?"rgba(16,185,129,.2)":"var(--border)")},innerHTML:(i+1)+". "+a}));
+      });
+      
+      // 해설
+      if(listenState.showAnswer&&curQ.exp){
+        card.appendChild(h("div",{style:{marginTop:"10px",padding:"10px",borderRadius:"10px",background:"rgba(16,185,129,.04)",border:"1px solid rgba(16,185,129,.1)",fontSize:"11px",color:"var(--t2)",textAlign:"left",lineHeight:"1.6"},innerHTML:"💡 "+curQ.exp}));
+      }
+      
+      // 재생 컨트롤
+      const ctrls=h("div",{style:{display:"flex",justifyContent:"center",gap:"10px",marginTop:"16px"}});
+      ctrls.appendChild(h("button",{className:"btn btn-ghost",style:{flex:"none",width:"44px",height:"44px",borderRadius:"22px",padding:"0",fontSize:"16px"},onclick:()=>{listenState.idx=Math.max(0,listenState.idx-1);listenState.showAnswer=false;TTS.stop();render();},innerHTML:"⏮"}));
+      ctrls.appendChild(h("button",{className:"btn btn-primary",style:{flex:"none",width:"56px",height:"56px",borderRadius:"28px",padding:"0",fontSize:"20px"},onclick:()=>{
+        if(TTS.speaking){TTS.stop();render();}
+        else{TTS.readQuestion(curQ,listenState.showAnswer,()=>{
+          if(!listenState.showAnswer){
+            listenState.showAnswer=true;render();
+            setTimeout(()=>{
+              TTS.speak("정답. "+(curQ.c+1)+"번. "+curQ.a[curQ.c],()=>{
+                if(listenState.auto){setTimeout(()=>{listenState.idx=Math.min(pool2.length-1,listenState.idx+1);listenState.showAnswer=false;render();},1500);}
+              });
+            },500);
+          }
+        });render();}
+      },innerHTML:TTS.speaking?"⏸":"▶"}));
+      ctrls.appendChild(h("button",{className:"btn btn-ghost",style:{flex:"none",width:"44px",height:"44px",borderRadius:"22px",padding:"0",fontSize:"16px"},onclick:()=>{listenState.idx=Math.min(pool2.length-1,listenState.idx+1);listenState.showAnswer=false;TTS.stop();render();},innerHTML:"⏭"}));
+      card.appendChild(ctrls);
+      
+      // 토글 버튼
+      const toggles=h("div",{style:{display:"flex",justifyContent:"center",gap:"8px",marginTop:"12px",flexWrap:"wrap"}});
+      toggles.appendChild(h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid "+(listenState.showAnswer?"var(--ok)":"var(--border)"),background:listenState.showAnswer?"rgba(16,185,129,.06)":"transparent",color:listenState.showAnswer?"var(--ok)":"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{listenState.showAnswer=!listenState.showAnswer;render();},innerHTML:listenState.showAnswer?"정답 숨기기":"정답 보기"}));
+      toggles.appendChild(h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid "+(listenState.auto?"var(--accent)":"var(--border)"),background:listenState.auto?"rgba(6,214,160,.06)":"transparent",color:listenState.auto?"var(--accent)":"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{listenState.auto=!listenState.auto;render();},innerHTML:listenState.auto?"자동넘김 ON":"자동넘김 OFF"}));
+      toggles.appendChild(h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid var(--border)",background:"transparent",color:"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{TTS.speak("정답은 "+(curQ.c+1)+"번. "+curQ.a[curQ.c]);},innerHTML:"🔊 정답만"}));
+      card.appendChild(toggles);
+      
+      pg.appendChild(card);
+    }
+  }
+  
   else if(S.tab==="ocr"){
     const oc=h("div",{className:"card"});
     oc.appendChild(h("div",{style:{fontSize:"12px",color:"var(--t2)",marginBottom:"8px",lineHeight:"1.6"},innerHTML:"교재나 기출문제를 촬영하면 AI가 문제를 자동 추출합니다"}));
@@ -905,7 +989,7 @@ window.addEventListener('popstate',()=>{
 window.history.pushState(null,null,window.location.href);
 
 // ═══ APK 자동업데이트 체크 ═══
-const APP_VERSION=2;
+const APP_VERSION=3;
 setTimeout(async()=>{
   try{
     const res=await fetch("https://api.github.com/repos/ydseun7256-sudo/quiz/releases/latest");
