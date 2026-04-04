@@ -655,7 +655,8 @@ function render(){
             listenState.showAnswer=true;render();
             setTimeout(()=>{
               TTS.speak("정답. "+(curQ.c+1)+"번. "+curQ.a[curQ.c],()=>{
-                if(listenState.auto){setTimeout(()=>{listenState.idx=Math.min(pool2.length-1,listenState.idx+1);listenState.showAnswer=false;render();},1500);}
+                if(listenState.auto){setTimeout(()=>{listenState.idx=Math.min(pool2.length-1,listenState.idx+1);listenState.showAnswer=false;render();
+                    setTimeout(()=>{const nq=getPool()[listenState.idx];if(nq)TTS.readQuestion(nq,false,()=>{listenState.showAnswer=true;render();setTimeout(()=>{TTS.speak("정답. "+(nq.c+1)+"번. "+nq.a[nq.c],()=>{if(listenState.auto){setTimeout(()=>{listenState.idx=Math.min(getPool().length-1,listenState.idx+1);listenState.showAnswer=false;render();},1500);}});},500);});},500);},1500);}
               });
             },500);
           }
@@ -668,7 +669,7 @@ function render(){
       const toggles=h("div",{style:{display:"flex",justifyContent:"center",gap:"8px",marginTop:"12px",flexWrap:"wrap"}});
       toggles.appendChild(h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid "+(listenState.showAnswer?"var(--ok)":"var(--border)"),background:listenState.showAnswer?"rgba(16,185,129,.06)":"transparent",color:listenState.showAnswer?"var(--ok)":"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{listenState.showAnswer=!listenState.showAnswer;render();},innerHTML:listenState.showAnswer?"정답 숨기기":"정답 보기"}));
       toggles.appendChild(h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid "+(listenState.auto?"var(--accent)":"var(--border)"),background:listenState.auto?"rgba(6,214,160,.06)":"transparent",color:listenState.auto?"var(--accent)":"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{listenState.auto=!listenState.auto;render();},innerHTML:listenState.auto?"자동넘김 ON":"자동넘김 OFF"}));
-      toggles.appendChild(h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid var(--border)",background:"transparent",color:"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:()=>{TTS.speak("정답은 "+(curQ.c+1)+"번. "+curQ.a[curQ.c]);},innerHTML:"🔊 정답만"}));
+      toggles.appendChild(h("button",{style:{padding:"6px 14px",borderRadius:"8px",border:"1px solid var(--border)",background:"transparent",color:"var(--t3)",fontSize:"10px",cursor:"pointer",fontFamily:"inherit"},onclick:function(){const cq=getPool()[listenState.idx];if(cq)TTS.speak("정답은 "+(cq.c+1)+"번. "+cq.a[cq.c]);},innerHTML:"🔊 정답만"}));
       card.appendChild(toggles);
       
       pg.appendChild(card);
