@@ -249,8 +249,17 @@ function answer(idx){
 async function aiCall(prompt,maxTk){
   if(!S.apiKey)throw new Error("API 키를 설정해주세요");
   if(S.aiProvider==="gemini"){
-    const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key="+S.apiKey,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})});
-    const d=await r.json();return d.candidates?.[0]?.content?.parts?.[0]?.text||"";
+    let model="gemini-2.0-flash";
+    let r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent?key="+S.apiKey,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})});
+    let d=await r.json();
+    // 모델 실패 시 다른 모델 시도
+    if(d.error){
+      model="gemini-1.5-flash";
+      r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent?key="+S.apiKey,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})});
+      d=await r.json();
+    }
+    if(d.error)throw new Error("Gemini 오류: "+(d.error.message||JSON.stringify(d.error)));
+    return d.candidates?.[0]?.content?.parts?.[0]?.text||"";
   }else{
     const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":S.apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:maxTk||2000,messages:[{role:"user",content:prompt}]})});
     const d=await r.json();return d.content?d.content.map(c=>c.text||"").join(""):"";
@@ -260,8 +269,12 @@ async function aiCall(prompt,maxTk){
 async function aiCallImg(base64,mime,prompt){
   if(!S.apiKey)throw new Error("API 키를 설정해주세요");
   if(S.aiProvider==="gemini"){
-    const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key="+S.apiKey,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{inline_data:{mime_type:mime,data:base64}},{text:prompt}]}]})});
-    const d=await r.json();return d.candidates?.[0]?.content?.parts?.[0]?.text||"";
+    let model="gemini-2.0-flash";
+    let r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent?key="+S.apiKey,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{inline_data:{mime_type:mime,data:base64}},{text:prompt}]}]})});
+    let d=await r.json();
+    if(d.error){model="gemini-1.5-flash";r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent?key="+S.apiKey,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{inline_data:{mime_type:mime,data:base64}},{text:prompt}]}]})});d=await r.json();}
+    if(d.error)throw new Error("Gemini 오류: "+(d.error.message||JSON.stringify(d.error)));
+    return d.candidates?.[0]?.content?.parts?.[0]?.text||"";
   }else{
     const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":S.apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:mime,data:base64}},{type:"text",text:prompt}]}]})});
     const d=await r.json();return d.content?d.content.map(c=>c.text||"").join(""):"";
