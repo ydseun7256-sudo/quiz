@@ -700,24 +700,72 @@ function render(){
   }
   
   else if(S.tab==="ocr"){
-    const oc=h("div",{className:"card"});
-    oc.appendChild(h("div",{style:{fontSize:"12px",color:"var(--t2)",marginBottom:"8px",lineHeight:"1.6"},innerHTML:"교재나 기출문제를 촬영하면 AI가 문제를 자동 추출합니다"}));
-    oc.appendChild(h("input",{type:"file",accept:"image/*",capture:"environment",capture:"environment",className:"input",style:{padding:"8px"},onchange:async(e)=>{
-      const f=e.target.files[0];if(!f)return;if(!S.apiKey){alert("API 키 필요");return;}
-      const r=new FileReader();r.onload=async function(){
-        const b64=r.result.split(",")[1];S.aiLoading=true;render();
-        try{const txt=await aiCallImg(b64,f.type,'이미지에서 시험문제 추출. JSON배열만: [{"q":"문제","a":["1","2","3","4"],"c":0,"exp":"해설"}]');
-        const m=txt.match(/\[.*\]/s);if(m){const qs=JSON.parse(m[0]).map((q,i)=>({id:"ocr_"+Date.now()+"_"+i,q:q.q,a:q.a,c:q.c,s:exObj?.subjects[0]||"일반",y:"OCR",exam:S.activeExam,exp:q.exp||"",src:"ocr",img:"data:"+f.type+";base64,"+b64}));S.questions.push(...qs);save();S.aiLoading=false;alert(qs.length+"개 추출!");render();}else{S.aiLoading=false;alert("추출 실패: "+(txt||"응답없음").substring(0,100));render();}}catch(e2){S.aiLoading=false;alert(e2.message);render();}
-      };r.readAsDataURL(f);
-    }}));
-    oc.appendChild(h("div",{style:{marginTop:"8px",fontSize:"10px",color:"var(--t3)",lineHeight:"1.6"},innerHTML:"💡 기출문제 사진 촬영 → AI가 문제/보기/정답/해설 추출 → DB 저장"}));
-    pg.appendChild(oc);
+    // ─── 이미지 AI 분석 (회로도/도형 지원) ───
+    pg.appendChild(h("div",{className:"section-title",innerHTML:"🔬 이미지 AI 분석 (회로도/수식 지원)"}));
+    const aiCard=h("div",{className:"card"});
+    aiCard.appendChild(h("div",{style:{fontSize:"12px",color:"var(--t2)",marginBottom:"8px",lineHeight:"1.6"},innerHTML:"회로도, 도형, 수식이 포함된 문제도 AI가 분석하여 추출합니다."}));
     
-    // PDF upload
-    const pdfCard=h("div",{className:"card",style:{marginTop:"8px"}});
-    pdfCard.appendChild(h("div",{className:"label",innerHTML:"📄 PDF 파일 업로드 (기출문제 PDF)"}));
-    pdfCard.appendChild(h("div",{style:{fontSize:"11px",color:"var(--t2)",marginBottom:"8px",lineHeight:"1.5"},innerHTML:"PDF 전체를 AI가 읽어서 문제를 추출합니다. 페이지 넘김으로 짤리는 문제 없이 완벽 추출!"}));
-    pdfCard.appendChild(h("input",{type:"file",accept:".pdf,application/pdf",className:"input",style:{padding:"8px"},onchange:async(e)=>{
+    // 분석 모드 선택
+    if(!S.ocrMode)S.ocrMode="ai";
+    const modeDiv=h("div",{style:{display:"flex",gap:"6px",marginBottom:"10px"}});
+    [{id:"ai",label:"🔬 AI 분석 (회로도)",desc:"회로도/도형 포함"},{id:"ocr",label:"📸 일반 OCR",desc:"텍스트 문제"}].forEach(function(m){
+      modeDiv.appendChild(h("button",{style:{flex:"1",padding:"10px",borderRadius:"10px",border:"1px solid "+(S.ocrMode===m.id?"var(--accent)":"var(--border)"),background:S.ocrMode===m.id?"rgba(6,214,160,.06)":"transparent",color:S.ocrMode===m.id?"var(--accent)":"var(--t3)",fontSize:"11px",fontWeight:"600",cursor:"pointer",fontFamily:"inherit",textAlign:"center"},onclick:function(){S.ocrMode=m.id;render();},innerHTML:m.label+"<br><span style='font-size:9px;opacity:.6'>"+m.desc+"</span>"}));
+    });
+    aiCard.appendChild(modeDiv);
+    
+    // 파일 업로드
+    aiCard.appendChild(h("div",{className:"label",innerHTML:"📸 사진 촬영 또는 이미지 선택"}));
+    aiCard.appendChild(h("input",{type:"file",accept:"image/*",capture:"environment",className:"input",style:{padding:"8px"},onchange:async function(e){
+      const f=e.target.files[0];if(!f)return;
+      if(!S.apiKey){alert("설정에서 API 키를 입력해주세요");return;}
+      
+      const reader=new FileReader();
+      reader.onload=async function(){
+        const b64=reader.result.split(",")[1];
+        S.aiLoading=true;render();
+        
+        let prompt;
+        if(S.ocrMode==="ai"){
+          // AI 분석 모드: 회로도/도형 분석
+          prompt='이 이미지는 전기/전자 관련 시험 문제이다. 다음을 수행하라: 1)이미지에 회로도, 도형, 그래프가 있으면 회로 구성을 텍스트로 상세히 설명하라 (예: [회로도: R1=10Ω과 R2=20Ω이 직렬연결, 전압원 V=100V, 전류계 A 연결]) 2)수식은 텍스트로 표현 (V=IR, P=VI, √3 등) 3)모든 문제를 빠짐없이 추출하라 4)4지선다 객관식으로 정리 5)해설에 풀이과정 포함. JSON 배열로만 출력: [{"q":"[회로도 설명] 문제내용","a":["보기1","보기2","보기3","보기4"],"c":0,"exp":"풀이: 계산과정..."}]';
+        }else{
+          // 일반 OCR 모드
+          prompt='이 이미지에서 시험문제를 모두 추출해줘. 그림/회로도/도형이 있으면 텍스트로 상세히 설명해서 문제에 포함 (예: [회로도: R=10Ω, V=220V 직렬회로]). 수식은 텍스트로 표현 (V=IR, √3 등). 4지선다 객관식, 해설 포함. JSON배열만: [{"q":"문제","a":["보기1","보기2","보기3","보기4"],"c":0,"exp":"해설"}]';
+        }
+        
+        try{
+          const txt=await aiCallImg(b64,f.type,prompt);
+          const m=txt.match(/\[.*\]/s);
+          if(m){
+            const qs=JSON.parse(m[0]);
+            const newQs=qs.map(function(q,i){return{
+              id:"ocr_"+Date.now()+"_"+i,q:q.q,a:q.a,c:q.c,
+              s:exObj?.subjects[0]||"일반",y:S.ocrMode==="ai"?"AI분석":"OCR",
+              exam:S.activeExam,exp:q.exp||"",src:"ocr",
+              img:"data:"+f.type+";base64,"+b64
+            };});
+            S.questions.push(...newQs);save();
+            S.aiLoading=false;
+            alert(newQs.length+"개 문제가 추출되었습니다!");
+            render();
+          }else{
+            S.aiLoading=false;
+            alert("추출 실패:\n"+(txt||"응답없음").substring(0,200));
+            render();
+          }
+        }catch(err){S.aiLoading=false;alert("오류: "+err.message);render();}
+      };
+      reader.readAsDataURL(f);
+    }}));
+    
+    aiCard.appendChild(h("div",{style:{marginTop:"8px",padding:"8px",borderRadius:"8px",background:"rgba(255,255,255,.02)",border:"1px solid var(--border)",fontSize:"10px",color:"var(--t3)",lineHeight:"1.6"},innerHTML:S.ocrMode==="ai"?"💡 AI 분석 모드:<br>• 회로도 → [회로도: R1=10Ω, R2=20Ω 직렬, V=100V] 형태로 변환<br>• 수식 → V=IR, P=VI 등 텍스트로 유지<br>• 풀이 과정까지 해설에 포함":"💡 일반 OCR 모드:<br>• 텍스트 위주 문제에 적합<br>• 그림 있으면 텍스트로 설명 시도"}));
+    pg.appendChild(aiCard);
+    
+    // ─── PDF 업로드 ───
+    pg.appendChild(h("div",{className:"section-title",style:{marginTop:"12px"},innerHTML:"📄 PDF 업로드"}));
+    const pdfCard=h("div",{className:"card"});
+    pdfCard.appendChild(h("div",{style:{fontSize:"12px",color:"var(--t2)",marginBottom:"8px",lineHeight:"1.5"},innerHTML:"PDF 전체를 AI가 분석합니다. 회로도/도형 포함 문제도 추출!"}));
+    pdfCard.appendChild(h("input",{type:"file",accept:".pdf,application/pdf",className:"input",style:{padding:"8px"},onchange:async function(e){
       const file=e.target.files[0];if(!file)return;
       if(!S.apiKey){alert("API 키 필요");return;}
       if(file.size>20*1024*1024){alert("20MB 이하 파일만 지원");return;}
@@ -734,7 +782,7 @@ function render(){
               method:"POST",headers:{"Content-Type":"application/json"},
               body:JSON.stringify({contents:[{parts:[
                 {inline_data:{mime_type:"application/pdf",data:b64}},
-                {text:'이 PDF에서 시험문제를 빠짐없이 모두 추출해줘. 중요 규칙: 1)그림/회로도/도형이 있는 문제는 절대 건너뛰지 말고, 그림 내용을 텍스트로 상세히 설명해서 문제에 포함시켜라 (예: [회로도: R1=10Ω과 R2=20Ω이 직렬연결, 전압원 V=100V]) 2)수식은 그대로 텍스트로 표현 (예: V=IR, P=VI, √3 등) 3)페이지 넘김으로 잘린 문제는 이어붙여라 4)4지선다 객관식으로 정리 5)해설 포함. JSON 배열로만 출력: [{"q":"문제","a":["보기1","보기2","보기3","보기4"],"c":0,"exp":"해설"}] c는 정답 인덱스(0-3). JSON만 출력.'}
+                {text:'이 PDF에서 시험문제를 빠짐없이 모두 추출해줘. 중요 규칙: 1)그림/회로도/도형이 있는 문제는 절대 건너뛰지 말고, 그림 내용을 텍스트로 상세히 설명해서 문제에 포함시켜라 (예: [회로도: R1=10Ω과 R2=20Ω이 직렬연결, 전압원 V=100V]) 2)수식은 그대로 텍스트로 표현 (예: V=IR, P=VI, √3 등) 3)페이지 넘김으로 잘린 문제는 이어붙여라 4)4지선다 객관식으로 정리 5)해설에 풀이과정 포함. JSON 배열로만 출력: [{"q":"문제","a":["보기1","보기2","보기3","보기4"],"c":0,"exp":"해설"}] c는 정답 인덱스(0-3). JSON만 출력.'}
               ]}]})
             });
             const data=await res.json();
@@ -745,42 +793,50 @@ function render(){
               headers:{"Content-Type":"application/json","x-api-key":S.apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
               body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:8000,messages:[{role:"user",content:[
                 {type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}},
-                {type:"text",text:'이 PDF에서 시험문제를 빠짐없이 모두 추출해줘. 중요 규칙: 1)그림/회로도/도형이 있는 문제는 절대 건너뛰지 말고, 그림 내용을 텍스트로 상세히 설명해서 문제에 포함시켜라 (예: [회로도: R1=10Ω과 R2=20Ω이 직렬연결, 전압원 V=100V]) 2)수식은 그대로 텍스트로 표현 (예: V=IR, P=VI, √3 등) 3)페이지 넘김으로 잘린 문제는 이어붙여라 4)4지선다 객관식으로 정리 5)해설 포함. JSON 배열로만 출력: [{"q":"문제","a":["보기1","보기2","보기3","보기4"],"c":0,"exp":"해설"}] c는 정답 인덱스(0-3). JSON만 출력.'}
+                {type:"text",text:'이 PDF에서 시험문제를 빠짐없이 모두 추출해줘. 회로도/도형은 텍스트로 설명. 수식 유지. JSON 배열로만 출력.'}
               ]}]})
             });
             const data=await res.json();
-            txt=data.content?data.content.map(c=>c.text||"").join(""):"";
+            txt=data.content?data.content.map(function(c){return c.text||"";}).join(""):"";
           }
           
-          const m=txt.match(/\[.*\]/s);
-          if(m){
-            const qs=JSON.parse(m[0]);
-            const newQs=qs.map((q,i)=>({
+          const m2=txt.match(/\[.*\]/s);
+          if(m2){
+            const qs=JSON.parse(m2[0]);
+            const newQs=qs.map(function(q,i){return{
               id:"pdf_"+Date.now()+"_"+i,q:q.q,a:q.a,c:q.c,
               s:exObj?.subjects[0]||"일반",y:"PDF추출",
               exam:S.activeExam,exp:q.exp||"",src:"ocr"
-            }));
+            };});
             S.questions.push(...newQs);save();
             S.aiLoading=false;
             alert(newQs.length+"개 문제가 추출되었습니다!");
             render();
           }else{
             S.aiLoading=false;
-            alert("문제 추출 실패.\n응답: "+(txt||"없음").substring(0,200));
+            alert("추출 실패:\n"+(txt||"응답없음").substring(0,200));
             render();
           }
         }catch(err){S.aiLoading=false;alert("오류: "+err.message);render();}
       };
       reader.readAsDataURL(file);
     }}));
-    pdfCard.appendChild(h("div",{style:{marginTop:"6px",padding:"8px",borderRadius:"8px",background:"rgba(139,92,246,.04)",border:"1px solid rgba(139,92,246,.1)",fontSize:"10px",color:"var(--t3)",lineHeight:"1.6"},innerHTML:"💡 PDF 특징:<br>• 페이지 넘김 문제도 AI가 이어붙여서 추출<br>• 교사용 PDF(정답 표시)면 정답도 자동 인식<br>• 한 번에 최대 20MB, 여러 번 나눠서 업로드 가능"}));
     pg.appendChild(pdfCard);
     
-    const ocrQs=S.questions.filter(q=>q.src==="ocr");
-    if(ocrQs.length){pg.appendChild(h("div",{className:"section-title",innerHTML:"추출된 문제 "+ocrQs.length+"개"}));ocrQs.slice(-5).reverse().forEach(q=>{pg.appendChild(h("div",{className:"card"},h("div",{style:{fontSize:"11px",color:"var(--t2)"},innerHTML:q.q.substring(0,60)+"..."})));});}
+    // 추출 이력
+    const ocrQs=S.questions.filter(function(q){return q.src==="ocr";});
+    if(ocrQs.length){
+      pg.appendChild(h("div",{className:"section-title",style:{marginTop:"12px"},innerHTML:"📋 추출된 문제 ("+ocrQs.length+"개)"}));
+      ocrQs.slice(-10).reverse().forEach(function(q){
+        const c2=h("div",{className:"card"});
+        if(q.img)c2.appendChild(h("img",{src:q.img,style:{width:"100%",borderRadius:"8px",marginBottom:"6px",maxHeight:"120px",objectFit:"cover"}}));
+        c2.appendChild(h("div",{className:"tag",style:{background:"rgba(139,92,246,.1)",color:"var(--purple)"},innerHTML:q.y||"OCR"}));
+        c2.appendChild(h("div",{style:{fontSize:"11px",color:"var(--t2)",lineHeight:"1.4",marginTop:"4px"},innerHTML:q.q.substring(0,80)+(q.q.length>80?"...":"")}));
+        pg.appendChild(c2);
+      });
+    }
   }
-
-  // ─── SCHEDULE ───
+  
   else if(S.tab==="schedule"){
     pg.appendChild(h("div",{style:{fontSize:"12px",color:"var(--t2)",marginBottom:"12px"},innerHTML:"2026년 국가기술자격 시험 일정 (Q-net 기준)"}));
     SCHEDULE.forEach(sc=>{
