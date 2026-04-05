@@ -406,7 +406,7 @@ function render(){
         h("div",{className:"lock-stat"},h("div",{className:"lock-val mono",style:{color:"var(--ok)"},innerHTML:st.streak+"🔥"}),h("div",{className:"lock-lab",innerHTML:"연속 정답"})),
         h("div",{className:"lock-stat"},h("div",{className:"lock-val mono",innerHTML:rate+"%"}),h("div",{className:"lock-lab",innerHTML:"정답률"}))
       ),
-      h("div",{className:"lock-hint"},h("span",{innerHTML:"▲"}),h("p",{innerHTML:"tap to study"}))
+      h("div",{className:"lock-hint"},h("span",{innerHTML:"▲"}),h("p",{innerHTML:"화면을 터치하면 문제풀기 시작"}))
     );root.appendChild(lk);return;
   }
 
@@ -565,7 +565,24 @@ function render(){
 
   // ─── AI ───
   else if(S.tab==="ai"){
-    if(S.aiLoading){pg.appendChild(h("div",{className:"empty",innerHTML:"🤖 AI 작업 중...<br>잠시만 기다려주세요"}));}
+    if(S.aiLoading){
+      const lc=h("div",{className:"card card-glow",style:{textAlign:"center",padding:"24px"}});
+      lc.appendChild(h("div",{style:{fontSize:"28px",marginBottom:"10px"},innerHTML:"🤖"}));
+      lc.appendChild(h("div",{style:{fontSize:"14px",fontWeight:"700",marginBottom:"6px"},innerHTML:S.aiStatus||"AI 작업 중..."}));
+      const pw=h("div",{style:{width:"100%",height:"6px",borderRadius:"3px",background:"rgba(255,255,255,.05)",marginBottom:"10px",overflow:"hidden"}});
+      pw.appendChild(h("div",{style:{height:"100%",borderRadius:"3px",background:"linear-gradient(90deg,var(--accent),var(--blue))",width:(S.aiProgress||0)+"%",transition:"width 0.5s"}}));
+      lc.appendChild(pw);
+      if(S.aiResults){
+        const st2=h("div",{style:{display:"flex",justifyContent:"center",gap:"16px",marginBottom:"8px"}});
+        st2.appendChild(h("div",{style:{fontSize:"12px"},innerHTML:"✅ 성공: <span style=\"color:var(--ok);font-weight:700\">"+S.aiResults.success+"</span>"}));
+        st2.appendChild(h("div",{style:{fontSize:"12px"},innerHTML:"❌ 실패: <span style=\"color:var(--ng);font-weight:700\">"+S.aiResults.fail+"</span>"}));
+        lc.appendChild(st2);
+        if(S.aiResults.reason)lc.appendChild(h("div",{style:{fontSize:"10px",color:"var(--t3)",marginTop:"4px"},innerHTML:""+S.aiResults.reason}));
+      }
+      lc.appendChild(h("div",{style:{fontSize:"10px",color:"var(--t3)",marginTop:"4px"},innerHTML:"API 응답 대기 중... 최대 30초"}));
+      lc.appendChild(h("button",{className:"btn btn-ghost",style:{marginTop:"10px",width:"100%"},onclick:function(){S.aiLoading=false;S.aiStatus="";S.aiProgress=0;S.aiResults=null;render();},innerHTML:"취소"}));
+      pg.appendChild(lc);
+    }
     else{
       // ─── AI 문제 생성 ───
       pg.appendChild(h("div",{className:"section-title",innerHTML:"🤖 AI 문제 생성"}));
@@ -638,7 +655,7 @@ function render(){
       anaCard.appendChild(h("button",{className:"btn btn-primary btn-full",onclick:async()=>{
         if(!S.apiKey){alert("API 키 필요");return;}
         if(S.wrongs.length<3){alert("오답 3개 이상 필요합니다");return;}
-        S.aiLoading=true;render();
+        S.aiLoading=true;S.aiStatus="약점 분석 중...";S.aiProgress=30;S.aiResults={success:0,fail:0,reason:"오답 패턴 분석 중"};render();
         const ws=S.wrongs.slice(-30).map(w=>"["+w.q.s+"] "+w.q.q+" → 정답:"+w.q.a[w.q.c]).join("\n");
         try{
           const r=await aiCall('너는 시험 합격 전략 코치다. 사용자의 오답 패턴을 분석하고 약점을 파악한 후 7일 학습 계획을 세워줘.\n\n오답 목록:\n'+ws+'\n\n분석해줘: 1.취약과목 TOP3 2.왜 틀렸는지 패턴 3.보완 전략 4.7일 학습 계획(요일별 과목+문제수). 한국어로 깔끔하게.',2000);
@@ -722,7 +739,7 @@ function render(){
       const reader=new FileReader();
       reader.onload=async function(){
         const b64=reader.result.split(",")[1];
-        S.aiLoading=true;render();
+        S.aiLoading=true;S.aiStatus="이미지 분석 중...";S.aiProgress=20;S.aiResults={success:0,fail:0,reason:""};render();
         
         let prompt;
         if(S.ocrMode==="ai"){
@@ -773,7 +790,7 @@ function render(){
       const reader=new FileReader();
       reader.onload=async function(){
         const b64=reader.result.split(",")[1];
-        S.aiLoading=true;render();
+        S.aiLoading=true;S.aiStatus="PDF 분석 중...";S.aiProgress=15;S.aiResults={success:0,fail:0,reason:"PDF 읽는 중"};render();
         
         try{
           let txt;
