@@ -195,6 +195,7 @@ let S={
   aiProvider:LS.get("aiProvider","gemini"),
   aiLoading:false,
   modal:null,
+  firstLaunch:LS.get("firstLaunch",true),
   updateAvailable:null,
 };
 
@@ -216,7 +217,7 @@ let S={
   }
 })();
 
-function save(){LS.set("questions",S.questions);LS.set("stats",S.stats);LS.set("wrongs",S.wrongs);LS.set("reviews",S.reviews);LS.set("exams",S.exams);LS.set("apiKey",S.apiKey);LS.set("aiProvider",S.aiProvider);LS.set("fontScale",S.fontScale);LS.set("activeExam",S.activeExam);}
+function save(){LS.set("questions",S.questions);LS.set("stats",S.stats);LS.set("wrongs",S.wrongs);LS.set("reviews",S.reviews);LS.set("exams",S.exams);LS.set("apiKey",S.apiKey);LS.set("aiProvider",S.aiProvider);LS.set("firstLaunch",S.firstLaunch);LS.set("fontScale",S.fontScale);LS.set("activeExam",S.activeExam);}
 
 function getPool(){return S.questions.filter(q=>q.exam===S.activeExam);}
 
@@ -451,6 +452,25 @@ function render(){
 
   // ─── HOME ───
   if(S.tab==="home"){
+    // 첫 실행: 시험 선택 화면
+    if(S.firstLaunch){
+      pg.appendChild(h("div",{style:{textAlign:"center",marginBottom:"20px"}},
+        h("div",{style:{fontSize:"28px",marginBottom:"8px"},innerHTML:"📚"}),
+        h("div",{style:{fontSize:"20px",fontWeight:"900"},innerHTML:"어떤 자격증을 준비하시나요?"}),
+        h("div",{style:{fontSize:"12px",color:"var(--t3)",marginTop:"4px"},innerHTML:"시험을 선택하면 바로 시작할 수 있어요"})
+      ));
+      S.exams.forEach(function(ex){
+        const cnt=S.questions.filter(function(q){return q.exam===ex.id;}).length;
+        pg.appendChild(h("div",{className:"exam-card",style:{padding:"16px",marginBottom:"6px",cursor:"pointer",borderLeft:"4px solid "+ex.color},onclick:function(){S.activeExam=ex.id;S.firstLaunch=false;save();render();}},
+          h("div",{style:{fontSize:"15px",fontWeight:"800"},innerHTML:(ex.icon||"📚")+" "+ex.name+(ex.type?" ["+ex.type+"]":"")}),
+          h("div",{style:{fontSize:"10px",color:"var(--t3)",marginTop:"3px"},innerHTML:cnt>0?cnt+"문제 준비됨":"AI로 문제 생성 가능"})
+        ));
+      });
+      pg.appendChild(h("div",{style:{marginTop:"12px",textAlign:"center"}},...[
+        h("button",{className:"btn btn-accent",style:{width:"100%",marginBottom:"6px"},onclick:function(){S.modal={type:"addExamAI"};render();},innerHTML:"🔍 다른 자격증 찾기 (AI)"}),
+        h("button",{className:"btn btn-ghost",style:{width:"100%"},onclick:function(){S.firstLaunch=false;save();render();},innerHTML:"나중에 선택할게요"})
+      ]));
+    }else{
     // Header
     pg.appendChild(h("div",{style:{marginBottom:"20px"}},
       h("div",{style:{fontSize:"11px",color:"var(--t3)",letterSpacing:"1px"},innerHTML:"CBT 합격 마스터"}),
@@ -521,6 +541,8 @@ function render(){
     }
   }
 
+  }
+  
   // ─── EXAMS ───
   else if(S.tab==="exams"){
     pg.appendChild(h("button",{className:"btn btn-accent btn-full",onclick:()=>{S.modal={type:"addExam"};render();},innerHTML:"+ 새 시험 추가"}));
@@ -1063,6 +1085,35 @@ function render(){
   if(S.modal){
     const bg=h("div",{className:"modal-bg",onclick:(e)=>{if(e.target===e.currentTarget){S.modal=null;render();}}});
     const md=h("div",{className:"modal"});
+    if(S.modal.type==="addExamAI"){
+      md.appendChild(h("div",{className:"modal-title",innerHTML:"🔍 자격증 찾기"}));
+      md.appendChild(h("div",{style:{fontSize:"12px",color:"var(--t2)",marginBottom:"10px"},innerHTML:"자격증 이름을 입력하면 AI가 과목을 자동으로 찾아줍니다"}));
+      md.appendChild(h("div",{className:"label",innerHTML:"자격증 이름"}));
+      md.appendChild(h("input",{className:"input",id:"searchExam",placeholder:"예: 재경관리사, 전기기능사, 소방설비기사..."}));
+      md.appendChild(h("button",{className:"btn btn-accent btn-full",style:{marginTop:"10px"},onclick:async function(){
+        const name=document.getElementById("searchExam").value.trim();
+        if(!name){alert("자격증 이름을 입력하세요");return;}
+        if(!S.apiKey){alert("설정에서 API 키를 입력해주세요");return;}
+        S.aiLoading=true;S.aiStatus="과목 검색 중...";S.aiProgress=30;S.modal=null;render();
+        try{
+          const result=await aiCall('한국 국가자격시험 '+name+'의 필기시험 과목을 알려줘. JSON으로만 출력해. name과 subjects 필드가 있는 JSON 객체. subjects는 문자열 배열. JSON만 출력, 다른 텍스트 없이.',1000);
+          const m=result.match(/\{.*\}/s);
+          if(m){
+            const info=JSON.parse(m[0]);
+            const id="exam_"+Date.now();
+            const colors=["#FF6B35","#7B68EE","#00BFFF","#E91E63","#00BCD4","#FF9800","#8BC34A","#795548"];
+            S.exams.push({id:id,name:info.name||name,type:"필기",subjects:info.subjects||["일반"],color:colors[S.exams.length%colors.length],icon:"📚",hasData:false});
+            S.activeExam=id;
+            save();
+            S.aiLoading=false;
+            alert(info.name+"\n과목: "+info.subjects.join(", ")+"\n\n추가 완료! AI탭에서 문제를 생성하세요.");
+            render();
+          }else{S.aiLoading=false;alert("검색 실패. 다시 시도해주세요.");render();}
+        }catch(e){S.aiLoading=false;alert("오류: "+e.message);render();}
+      },innerHTML:"🔍 AI로 과목 검색"}));
+      md.appendChild(h("div",{style:{marginTop:"10px",fontSize:"10px",color:"var(--t3)",lineHeight:"1.6"},innerHTML:"💡 예시: 재경관리사, 전기기사, 소방설비기사,<br>정보처리기사, 건축기사, 위험물산업기사 등<br>어떤 자격증이든 검색 가능!"}));
+    }
+    
     if(S.modal.type==="addExam"){
       md.appendChild(h("div",{className:"modal-title",innerHTML:"새 시험 추가"}));
       md.appendChild(h("div",{className:"label",innerHTML:"시험 이름"}));md.appendChild(h("input",{className:"input",id:"neName",placeholder:"예: 전기기능사"}));
