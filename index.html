@@ -1186,6 +1186,27 @@ function render(){
   }
 }
 
+// ═══ 해설 마이그레이션: DEFAULT_CBT의 해설을 기존 문제에 반영 ═══
+(function(){
+  var expVer=LS.get("expVer",0);
+  if(expVer<2){
+    var lookup={};
+    DEFAULT_CBT.forEach(function(q,i){
+      var key=q.id||(q.q.substring(0,50));
+      if(q.exp&&q.exp.length>20)lookup[key]=q.exp;
+    });
+    var updated=0;
+    S.questions.forEach(function(q){
+      var key=q.id||(q.q.substring(0,50));
+      if(lookup[key]&&(!q.exp||q.exp.length<30||q.exp.startsWith("정답:")||q.exp.startsWith("정답 ")&&q.exp.length<40)){
+        q.exp=lookup[key];updated++;
+      }
+    });
+    if(updated>0){save();console.log("해설 마이그레이션: "+updated+"개 업데이트");}
+    LS.set("expVer",2);
+  }
+})();
+
 setInterval(()=>{if(S.screen==="lock")render();},1000);
 render();
 
@@ -1201,7 +1222,7 @@ window.addEventListener('popstate',()=>{
 window.history.pushState(null,null,window.location.href);
 
 // ═══ APK 자동업데이트 체크 ═══
-const APP_VERSION=3;
+const APP_VERSION=4;
 setTimeout(async()=>{
   try{
     const res=await fetch("https://api.github.com/repos/ydseun7256-sudo/quiz/releases/latest");
