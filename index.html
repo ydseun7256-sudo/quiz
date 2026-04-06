@@ -1046,12 +1046,12 @@ function render(){
 
     // ─── 해설 일괄 생성 ───
     pg.appendChild(h("div",{className:"section-title",style:{marginTop:"14px"},innerHTML:"📖 해설 일괄 생성"}));
-    var noExpCnt=S.questions.filter(function(q){return !q.exp||q.exp.length<50;}).length;
+    var noExpCnt=S.questions.filter(function(q){return !q.exp||q.exp.length<50||q.exp.indexOf("핵심 출제 포인트")>=0||q.exp.indexOf("핵심 개념")>=0||q.exp.indexOf("올바른 설명입니다")>=0||q.exp.indexOf("부정확하거나")>=0||q.exp.startsWith("1️⃣");}).length;
     var expCard=h("div",{className:"card"});
     expCard.appendChild(h("div",{style:{fontSize:"12px",color:"var(--t2)",marginBottom:"8px",lineHeight:"1.5"},innerHTML:"해설 부족한 문제: <b>"+noExpCnt+"</b>개 / 전체 "+S.questions.length+"개<br>Gemini API로 상세 해설을 자동 생성합니다."}));
     expCard.appendChild(h("button",{id:"batchExpBtn",className:"btn btn-accent btn-full",onclick:async function(){
       if(!S.apiKey){alert("설정에서 API 키를 먼저 입력해주세요");return;}
-      var noExp=S.questions.filter(function(q){return !q.exp||q.exp.length<50;});
+      var noExp=S.questions.filter(function(q){return !q.exp||q.exp.length<50||q.exp.indexOf("핵심 출제 포인트")>=0||q.exp.indexOf("핵심 개념")>=0||q.exp.indexOf("올바른 설명입니다")>=0||q.exp.indexOf("부정확하거나")>=0||q.exp.startsWith("1️⃣");});
       if(!noExp.length){alert("모든 문제에 해설이 있습니다!");return;}
       if(!confirm(noExp.length+"개 문제의 해설을 생성합니다.\nGemini 무료 한도 내에서 가능합니다. 진행할까요?"))return;
       var btn=document.getElementById("batchExpBtn");
@@ -1081,6 +1081,32 @@ function render(){
       alert(done+"개 해설 생성 완료!"+(fail>0?"\n"+fail+"개 실패 - 재시도하면 나머지도 생성됩니다":""));
       render();
     },innerHTML:"📖 해설 부족한 "+noExpCnt+"개 문제 일괄 생성"}));
+    expCard.appendChild(h("button",{className:"btn btn-full",style:{marginTop:"8px",background:"rgba(139,92,246,.15)",color:"var(--purple)",border:"1px solid rgba(139,92,246,.3)"},onclick:async function(){
+      if(!S.apiKey){alert("API 키 필요");return;}
+      if(!confirm("전체 "+S.questions.length+"개 문제의 해설을 새로 생성합니다.\n시간이 걸립니다. 진행?"))return;
+      var all=S.questions;var btn2=this;var BATCH=10;var done=0;var fail=0;
+      for(var i=0;i<all.length;i+=BATCH){
+        var chunk=all.slice(i,Math.min(i+BATCH,all.length));
+        btn2.innerHTML="🔄 전체 재생성중... ("+done+"/"+all.length+")";
+        var items=chunk.map(function(q,j){
+          var opts=q.a.map(function(o,k){return(k+1)+")"+o;}).join(" ");
+          return"["+j+"] "+q.q.substring(0,120)+" | "+opts+" | 정답:"+(q.c+1);
+        }).join("\n");
+        var prompt="너는 자격증 시험 대비 전문 해설 AI다. 다음 "+chunk.length+"개 문제의 해설을 각각 작성.\n형식: 1️⃣정답 2️⃣핵심개념(정의+이유) 3️⃣오답분석(각 오답이 왜 틀렸는지) 4️⃣비교정리 5️⃣시험포인트 6️⃣확장개념\n계산문제는 풀이과정 전부 단계별. 단답형 금지. 충분히 상세하게.\nJSON만: [{\"idx\":0,\"exp\":\"해설\"},...]\n\n"+items;
+        try{
+          var result=await aiCall(prompt,4000);
+          var m=result.match(/\[.*\]/s);
+          if(m){
+            var exps=JSON.parse(m[0]);
+            exps.forEach(function(e){if(e.idx>=0&&e.idx<chunk.length&&e.exp){chunk[e.idx].exp=e.exp;done++;}});
+            save();
+          }else{fail+=chunk.length;}
+        }catch(err){fail+=chunk.length;}
+        await new Promise(function(r){setTimeout(r,2000);});
+      }
+      btn2.innerHTML="🔄 전체 재생성 ("+done+"개 완료)";
+      alert(done+"개 해설 생성 완료!");render();
+    },innerHTML:"🔄 전체 "+S.questions.length+"개 문제 해설 재생성 (Gemini)"}));
     pg.appendChild(expCard);
 
     // Backup/Restore
